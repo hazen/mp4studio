@@ -77,3 +77,7 @@ scripts/test.sh
 - Homebrew's ffmpeg is built without libass, so text subtitles (SRT/ASS) can't be burned in. Image subtitles (PGS/VobSub) can. For text burn-in, install an ffmpeg with libass (e.g. `brew tap homebrew-ffmpeg/ffmpeg && brew install homebrew-ffmpeg/ffmpeg/ffmpeg`) and select it in **Settings ▸ Tools**.
 - MP4 splitting uses ffmpeg's segmenter. On files with sparse subtitle tracks, MP4Box's `-split`/`-splits` stop after the first part but still exit successfully.
 - Online metadata search (TMDB/TVDB) isn't included.
+
+## License
+
+MIT. See [LICENSE](LICENSE). MP4tools and its artwork belong to EmmGunn and are not part of this project.
