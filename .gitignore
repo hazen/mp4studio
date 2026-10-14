@@ -1,0 +1,9 @@
+.build/
+build/
+.swiftpm/
+.DS_Store
+*.xcodeproj/
+xcuserdata/
+
+# Personal icon derived from MP4tools artwork (© EmmGunn); not redistributed.
+Resources/AppIcon.icns
