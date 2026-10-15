@@ -140,6 +140,7 @@ struct ExtractView: View {
     @State private var folder: URL?
     @State private var errors: [String] = []
     @State private var note: String?
+    @AppStorage("extractSubtitlesAsText") private var subtitlesAsText = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
@@ -158,6 +159,11 @@ struct ExtractView: View {
                            options: .init(checkLabel: "Extract", editable: false, showForced: true))
                 Text("Each track is saved as its own file, e.g. .srt, .ac3, .h264 or .sup. Text subtitles from MP4 are saved as SRT.")
                     .font(.caption).foregroundStyle(.secondary)
+                if file.tracks.contains(where: { SubtitleOCR.supportedCodecs.contains($0.codec) }) {
+                    Toggle("Convert PGS and VobSub subtitles to SRT with text recognition", isOn: $subtitlesAsText)
+                    Text("Text is read on this Mac with Apple's Vision framework. Check the result: italics aren't kept, and unusual fonts or colors can be misread.")
+                        .font(.caption).foregroundStyle(.secondary)
+                }
                 Divider()
                 HStack(spacing: 10) {
                     FolderField(label: "Save to", url: Binding(get: { folder ?? file.url.deletingLastPathComponent() }, set: { folder = $0 }))
@@ -194,7 +200,8 @@ struct ExtractView: View {
         guard let file else { return }
         do {
             let plan = try ExtractBuilder(tools: app.toolPaths).plan(file: file, trackIDs: checked,
-                                                                     outputFolder: folder ?? file.url.deletingLastPathComponent())
+                                                                     outputFolder: folder ?? file.url.deletingLastPathComponent(),
+                                                                     ocrTemporaryDirectory: subtitlesAsText ? app.temporaryDirectory : nil)
             app.queue.add(plan)
             withAnimation { note = "Queued \(plan.outputs.count) file(s)" }
         } catch {

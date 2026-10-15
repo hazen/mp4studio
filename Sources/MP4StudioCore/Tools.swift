@@ -6,6 +6,11 @@ public enum Tool: String, CaseIterable, Codable, Sendable, Identifiable {
     case mkvmerge, mkvextract
     case mp4box = "MP4Box"
     case atomicParsley = "AtomicParsley"
+    /// MP4Studio's own text recognition helper, shipped next to the app's executable.
+    case subtitleOCR = "mp4studio-ocr"
+
+    /// The tools users install and configure. The OCR helper comes with the app.
+    public static let allCases: [Tool] = [.ffmpeg, .ffprobe, .ffplay, .mkvmerge, .mkvextract, .mp4box, .atomicParsley]
 
     public var id: String { rawValue }
 
@@ -16,6 +21,7 @@ public enum Tool: String, CaseIterable, Codable, Sendable, Identifiable {
         case .mkvmerge, .mkvextract: return "mkvtoolnix"
         case .mp4box: return "gpac"
         case .atomicParsley: return "atomicparsley"
+        case .subtitleOCR: return ""
         }
     }
 
@@ -28,6 +34,7 @@ public enum Tool: String, CaseIterable, Codable, Sendable, Identifiable {
         case .mkvextract: return "Extracting tracks from MKV"
         case .mp4box: return "MP4 track editing, splitting, joining"
         case .atomicParsley: return "iTunes-style MP4 metadata and artwork"
+        case .subtitleOCR: return "Reading text from image subtitles"
         }
     }
 }
@@ -46,6 +53,10 @@ public struct ToolPaths: Codable, Sendable, Equatable {
         let fm = FileManager.default
         if let override = overrides[tool.rawValue]?.trimmingCharacters(in: .whitespaces), !override.isEmpty {
             return fm.isExecutableFile(atPath: override) ? URL(fileURLWithPath: override) : nil
+        }
+        if tool == .subtitleOCR {
+            let helper = Bundle.main.executableURL?.deletingLastPathComponent().appendingPathComponent(tool.rawValue)
+            return helper.flatMap { fm.isExecutableFile(atPath: $0.path) ? $0 : nil }
         }
         for dir in Self.searchDirectories {
             let path = dir + "/" + tool.rawValue
@@ -67,6 +78,8 @@ public enum ToolError: LocalizedError, Equatable {
 
     public var errorDescription: String? {
         switch self {
+        case .missing(.subtitleOCR):
+            return "The mp4studio-ocr helper is missing from the app. Rebuild it with scripts/build-app.sh."
         case .missing(let tool):
             return "\(tool.rawValue) isn't installed. Install it with: brew install \(tool.formula)"
         case .failed(let tool, let status, let message):

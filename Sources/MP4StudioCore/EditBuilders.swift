@@ -125,11 +125,31 @@ public struct ExtractBuilder {
     public let tools: ToolPaths
     public init(tools: ToolPaths) { self.tools = tools }
 
-    public func plan(file: MediaFile, trackIDs: Set<String>, outputFolder: URL) throws -> JobPlan {
-        let tracks = file.tracks.filter { trackIDs.contains($0.id) }
+    /// With `ocrTemporaryDirectory` set, PGS and VobSub tracks are read with text recognition and saved as SRT.
+    public func plan(file: MediaFile, trackIDs: Set<String>, outputFolder: URL, ocrTemporaryDirectory: URL? = nil) throws -> JobPlan {
+        var tracks = file.tracks.filter { trackIDs.contains($0.id) }
         guard !tracks.isEmpty else { throw ToolError.invalid("Select the tracks to extract.") }
         let base = file.url.deletingPathExtension().lastPathComponent
         var reserved = Set<URL>()
+        var steps: [JobStep] = []
+        var urls: [URL] = []
+        var temporaryFiles: [URL] = []
+        if let temp = ocrTemporaryDirectory {
+            let ocrTracks = tracks.filter { SubtitleOCR.supportedCodecs.contains($0.codec) }
+            tracks.removeAll { SubtitleOCR.supportedCodecs.contains($0.codec) }
+            for t in ocrTracks {
+                let lang = t.language == "und" ? "" : ".\(t.language)"
+                let url = uniqueURL(in: outputFolder, baseName: "\(base).track\(t.streamIndex)\(lang)", extension: "srt", reserved: reserved)
+                reserved.insert(url)
+                let ocr = try SubtitleOCRBuilder(tools: tools).steps(file: file, track: t, output: url, temporaryDirectory: temp)
+                steps += ocr.steps
+                temporaryFiles += ocr.temporaryFiles
+                urls.append(url)
+            }
+        }
+        guard !tracks.isEmpty else {
+            return JobPlan(title: "Extract from \(file.name)", steps: steps, outputs: urls, outputFolder: outputFolder, temporaryFiles: temporaryFiles)
+        }
         var outputs: [(MediaTrack, URL)] = []
         let useMKVExtract = file.container == .mkv && tools.url(for: .mkvextract) != nil
         for t in tracks {
@@ -157,10 +177,11 @@ public struct ExtractBuilder {
             step = JobStep(label: "Extracting with ffmpeg", tool: .ffmpeg, executable: exe, arguments: args,
                            progress: .ffmpeg(totalSeconds: file.duration))
         }
-        var urls = outputs.map(\.1)
+        urls += outputs.map(\.1)
         // VobSub extraction writes an .idx plus a matching .sub.
         urls += outputs.filter { $0.1.pathExtension == "idx" }.map { $0.1.deletingPathExtension().appendingPathExtension("sub") }
-        return JobPlan(title: "Extract from \(file.name)", steps: [step], outputs: urls, outputFolder: outputFolder)
+        return JobPlan(title: "Extract from \(file.name)", steps: [step] + steps, outputs: urls, outputFolder: outputFolder,
+                       temporaryFiles: temporaryFiles)
     }
 
     static func mkvextractExtension(_ t: MediaTrack) -> String {
@@ -219,6 +240,62 @@ public struct ExtractBuilder {
         case "h265": return "hevc"
         default: return nil
         }
+    }
+}
+
+// MARK: - Subtitle OCR
+
+/// Image subtitles to SRT: copy the track out as .sup or .idx/.sub if needed, then run the OCR helper on it.
+public struct SubtitleOCRBuilder {
+    public let tools: ToolPaths
+    public init(tools: ToolPaths) { self.tools = tools }
+
+    public func steps(file: MediaFile, track t: MediaTrack, output: URL, temporaryDirectory: URL) throws -> (steps: [JobStep], temporaryFiles: [URL]) {
+        guard SubtitleOCR.supportedCodecs.contains(t.codec) else {
+            throw ToolError.invalid("\(t.codecLabel) subtitles can't be read as text. Text recognition works with PGS and VobSub.")
+        }
+        let helper = try tools.require(.subtitleOCR)
+        let ext = file.url.pathExtension.lowercased()
+        let stem = temporaryDirectory.appendingPathComponent("ocr-\(UUID().uuidString)")
+        var steps: [JobStep] = []
+        var temporaryFiles: [URL] = []
+        let source: URL
+
+        if t.codec == "hdmv_pgs_subtitle" {
+            if ext == "sup" {
+                source = file.url
+            } else {
+                source = stem.appendingPathExtension("sup")
+                temporaryFiles.append(source)
+                steps.append(JobStep(label: "Copying PGS subtitles", tool: .ffmpeg, executable: try tools.require(.ffmpeg),
+                                     arguments: ["-hide_banner", "-nostdin", "-y", "-loglevel", "warning", "-progress", "pipe:1", "-nostats",
+                                                 "-i", file.url.path, "-map", "0:\(t.streamIndex)", "-c", "copy", "-f", "sup", source.path],
+                                     progress: .ffmpeg(totalSeconds: file.duration)))
+            }
+        } else if ext == "idx" {
+            source = file.url
+        } else {
+            // Only mkvextract writes .idx/.sub, so VobSub from other containers goes through a Matroska copy first.
+            let mkvextract = try tools.require(.mkvextract)
+            var mkv = file.url, trackID = t.streamIndex
+            if file.container != .mkv {
+                mkv = stem.appendingPathExtension("mks")
+                trackID = 0
+                temporaryFiles.append(mkv)
+                steps.append(JobStep(label: "Copying VobSub subtitles", tool: .ffmpeg, executable: try tools.require(.ffmpeg),
+                                     arguments: ["-hide_banner", "-nostdin", "-y", "-loglevel", "warning", "-progress", "pipe:1", "-nostats",
+                                                 "-i", file.url.path, "-map", "0:\(t.streamIndex)", "-c", "copy", "-f", "matroska", mkv.path],
+                                     progress: .ffmpeg(totalSeconds: file.duration)))
+            }
+            source = stem.appendingPathExtension("idx")
+            temporaryFiles += [source, stem.appendingPathExtension("sub")]
+            steps.append(JobStep(label: "Extracting VobSub subtitles", tool: .mkvextract, executable: mkvextract,
+                                 arguments: ["--gui-mode", mkv.path, "tracks", "\(trackID):\(source.path)"], progress: .mkvtoolnix))
+        }
+        // The helper reports progress in mkvtoolnix's --gui-mode format.
+        steps.append(JobStep(label: "Recognizing subtitle text", tool: .subtitleOCR, executable: helper,
+                             arguments: [source.path, output.path, t.language], progress: .mkvtoolnix))
+        return (steps, temporaryFiles)
     }
 }
 

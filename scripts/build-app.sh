@@ -9,12 +9,14 @@ if [[ -z "${SDKROOT:-}" && -d /Library/Developer/CommandLineTools/SDKs/MacOSX26.
 fi
 
 swift build -c release --arch arm64
-BIN="$(swift build -c release --arch arm64 --show-bin-path)/MP4Studio"
+BIN_DIR="$(swift build -c release --arch arm64 --show-bin-path)"
+BIN="$BIN_DIR/MP4Studio"
 
 APP=build/MP4Studio.app
 rm -rf "$APP"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
 cp "$BIN" "$APP/Contents/MacOS/MP4Studio"
+cp "$BIN_DIR/mp4studio-ocr" "$APP/Contents/MacOS/mp4studio-ocr"
 cp Resources/Info.plist "$APP/Contents/Info.plist"
 
 # A local Resources/AppIcon.icns (not in git) wins; otherwise generate the default icon.
@@ -29,6 +31,7 @@ else
   cp build/DefaultIcon.icns "$APP/Contents/Resources/AppIcon.icns"
 fi
 
+codesign --force --sign - --timestamp=none "$APP/Contents/MacOS/mp4studio-ocr"
 codesign --force --sign - --timestamp=none "$APP"
 echo "Built $APP ($(lipo -archs "$APP/Contents/MacOS/MP4Studio"))"
 
