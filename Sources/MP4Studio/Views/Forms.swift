@@ -98,6 +98,8 @@ struct AudioSettingsForm: View {
                 .disabled(s.surroundAction == .passthrough || s.surroundAction == .aacStereo)
                 Toggle("Add an AAC stereo version before each surround track", isOn: $s.addStereoVersion)
                     .disabled(s.surroundAction == .aacStereo)
+                Text("E-AC3 keeps AC3 and E-AC3 tracks and converts TrueHD, DTS and others to 5.1 E-AC3 for Apple TV. Atmos isn't kept, and 7.1 becomes 5.1.")
+                    .font(.caption).foregroundStyle(.secondary)
                 Text("Pass-through keeps DTS and TrueHD in MKV. For MP4 they're converted to AC3, since Apple players can't play them.")
                     .font(.caption).foregroundStyle(.secondary)
             }

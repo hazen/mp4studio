@@ -101,7 +101,7 @@ public enum SurroundAction: String, Codable, Sendable, CaseIterable, Identifiabl
         switch self {
         case .passthrough: return "Pass through"
         case .ac3: return "AC3 (Dolby Digital)"
-        case .eac3: return "E-AC3 (Dolby Digital Plus)"
+        case .eac3: return "E-AC3 (Dolby Digital Plus), keep AC3"
         case .aacStereo: return "AAC stereo only"
         }
     }
@@ -114,8 +114,9 @@ public enum SubtitleAction: String, Codable, Sendable, CaseIterable, Identifiabl
 }
 
 public struct ConvertSettings: Codable, Equatable, Sendable {
+    // Defaults target Apple TV: M4V, Apple TV 4K limits, and surround that it can play.
     public var container: OutputContainer = .m4v
-    public var device: DeviceTarget = .any
+    public var device: DeviceTarget = .appleTV4K
 
     public var videoCodec: VideoCodecChoice = .passthrough
     public var crf: Int = 20
@@ -127,10 +128,10 @@ public struct ConvertSettings: Codable, Equatable, Sendable {
     public var squarePixels: Bool = false
 
     public var stereoAction: StereoAction = .passthrough
-    public var surroundAction: SurroundAction = .passthrough
+    public var surroundAction: SurroundAction = .eac3
     public var addStereoVersion: Bool = true
     public var stereoBitrateKbps: Int = 192
-    public var surroundBitrateKbps: Int = 448
+    public var surroundBitrateKbps: Int = 640
 
     public var subtitleAction: SubtitleAction = .soft
 
@@ -249,17 +250,16 @@ public struct Preset: Codable, Identifiable, Equatable, Sendable {
         self.rules = rules
     }
 
+    /// The first one is the default for new installs.
     public static var builtIn: [Preset] {
-        var appleTV = ConvertSettings()
-        appleTV.container = .m4v
-        appleTV.device = .appleTVHD
+        let appleTV = ConvertSettings()
 
         var hevc = ConvertSettings()
-        hevc.container = .m4v
-        hevc.device = .appleTV4K
         hevc.videoCodec = .hevcHardware
-        hevc.surroundAction = .eac3
-        hevc.surroundBitrateKbps = 640
+
+        var keepAudio = ConvertSettings()
+        keepAudio.surroundAction = .passthrough
+        keepAudio.surroundBitrateKbps = 448
 
         var universal = ConvertSettings()
         universal.container = .mp4
@@ -272,10 +272,13 @@ public struct Preset: Codable, Identifiable, Equatable, Sendable {
 
         var mkv = ConvertSettings()
         mkv.container = .mkv
+        mkv.device = .any
+        mkv.surroundAction = .passthrough
 
         return [
-            Preset(name: "Apple TV – remux, keep quality", settings: appleTV),
+            Preset(name: "Apple TV – remux, E-AC3 surround", settings: appleTV),
             Preset(name: "Apple TV 4K – HEVC hardware", settings: hevc),
+            Preset(name: "Remux – keep original surround", settings: keepAudio),
             Preset(name: "Universal H.264 (stereo)", settings: universal),
             Preset(name: "MKV remux", settings: mkv),
         ]

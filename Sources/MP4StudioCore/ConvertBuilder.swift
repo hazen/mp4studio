@@ -181,7 +181,9 @@ public struct ConvertBuilder {
                 case .ac3:
                     emitAudio(a, a.codec == "ac3" ? copy : dolby("ac3", s.surroundBitrateKbps, channels: a.channels), title: surroundTitle)
                 case .eac3:
-                    emitAudio(a, a.codec == "eac3" ? copy : dolby("eac3", s.surroundBitrateKbps, channels: a.channels), title: surroundTitle)
+                    // AC3 plays everywhere E-AC3 does, so only TrueHD, DTS and the like are converted.
+                    let dolbyAlready = a.codec == "eac3" || a.codec == "ac3"
+                    emitAudio(a, dolbyAlready ? copy : dolby("eac3", s.surroundBitrateKbps, channels: a.channels), title: surroundTitle)
                 case .aacStereo:
                     break
                 }

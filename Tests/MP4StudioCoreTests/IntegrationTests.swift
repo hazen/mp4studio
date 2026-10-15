@@ -143,6 +143,7 @@ struct IntegrationTests {
         var s = ConvertSettings()
         s.videoCodec = .hevcHardware
         s.device = .appleTVHD
+        s.surroundAction = .passthrough
         s.addStereoVersion = false
         let out = work.appendingPathComponent("hevc.m4v")
         let plan = try ConvertBuilder(tools: tools, capabilities: .full).plan(ConvertRequest(
@@ -152,6 +153,26 @@ struct IntegrationTests {
         let r = try await probe(out)
         #expect(r.tracks[0].codec == "hevc" && r.tracks[0].isTenBit)
         #expect(r.tracks[1].codec == "ac3")
+    }
+
+    /// The default (Apple TV) settings turn TrueHD into E-AC3 plus an AAC stereo version, keeping the video as is.
+    /// (ffmpeg only encodes TrueHD up to 5.1; the 7.1 downmix is covered by the unit tests.)
+    @Test func defaultsConvertTrueHDToEAC3() async throws {
+        guard available else { return }
+        let src = work.appendingPathComponent("truehd.mkv")
+        try await ffmpeg(["-f", "lavfi", "-i", "testsrc2=size=1280x720:rate=24:duration=3",
+                          "-f", "lavfi", "-i", "sine=duration=3,aformat=channel_layouts=5.1",
+                          "-c:v", "libx264", "-preset", "ultrafast", "-c:a", "truehd", "-strict", "-2", src.path])
+        let main = try await probe(src)
+        #expect(main.tracks[1].codec == "truehd" && main.tracks[1].channels == 6)
+        let out = work.appendingPathComponent("truehd.m4v")
+        let plan = try ConvertBuilder(tools: tools, capabilities: .full).plan(ConvertRequest(
+            main: main, selectedTrackIDs: Set(main.tracks.map(\.id)), settings: ConvertSettings(), outputURL: out, temporaryDirectory: work))
+        try await run(plan)
+        let r = try await probe(out)
+        #expect(r.tracks.map(\.codec) == ["h264", "aac", "eac3"])
+        #expect(r.tracks[1].channels == 2 && r.tracks[2].channels == 6)
+        #expect(r.tracks[1].isDefault && !r.tracks[2].isDefault)
     }
 
     @Test func editMP4WithMP4Box() async throws {
