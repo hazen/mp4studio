@@ -44,6 +44,8 @@ final class AppState {
     var defaultPresetID: UUID? { didSet { Defaults.save(defaultPresetID, "defaultPresetID") } }
     var outputFolder: URL { didSet { UserDefaults.standard.set(outputFolder.path, forKey: "outputFolder") } }
     var keepLogs: Bool { didSet { UserDefaults.standard.set(keepLogs, forKey: "keepLogs") } }
+    /// TMDB API key or read access token, for finding artwork. Kept in the keychain.
+    var tmdbKey: String { didSet { Keychain.write(tmdbKey, "tmdb") } }
 
     let queue: JobQueue
     let convert: ConvertModel
@@ -60,6 +62,7 @@ final class AppState {
         let movies = FileManager.default.urls(for: .moviesDirectory, in: .userDomainMask).first!
         outputFolder = defaults.string(forKey: "outputFolder").map { URL(fileURLWithPath: $0) } ?? movies
         keepLogs = defaults.object(forKey: "keepLogs") as? Bool ?? true
+        tmdbKey = Keychain.read("tmdb") ?? ""
 
         let support = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
             .appendingPathComponent("MP4Studio")

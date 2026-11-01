@@ -213,6 +213,7 @@ struct MetadataForm: View {
 struct ArtworkWell: View {
     @Binding var fields: MetadataFields
     var existing: NSImage?
+    @State private var searching = false
 
     var image: NSImage? {
         if fields.removeArtwork { return nil }
@@ -244,6 +245,8 @@ struct ArtworkWell: View {
                         fields.removeArtwork = false
                     }
                 }
+                Button("Find Online…") { searching = true }
+                    .help("Search The Movie Database for posters")
                 Button("Remove Artwork") {
                     fields.artworkPath = nil
                     fields.removeArtwork = true
@@ -252,6 +255,9 @@ struct ArtworkWell: View {
                 Text("Drop a JPEG or PNG on the box. Posters look best at 2:3.")
                     .font(.caption).foregroundStyle(.secondary)
             }
+        }
+        .sheet(isPresented: $searching) {
+            ArtworkSearchSheet(fields: $fields, current: image)
         }
     }
 }

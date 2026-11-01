@@ -208,6 +208,17 @@ private struct GeneralSettings: View {
             LabeledContent("Logs") {
                 Button("Show in Finder") { NSWorkspace.shared.open(app.logsDirectory) }
             }
+            Section {
+                SecureField("TMDB API key", text: $app.tmdbKey, prompt: Text("API key or read access token"))
+            } header: {
+                Text("Artwork search")
+            } footer: {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Find Online in the Artwork section searches The Movie Database. Create a free key at [themoviedb.org/settings/api](https://www.themoviedb.org/settings/api). It's stored in your keychain.")
+                    Text("This product uses the TMDB API but is not endorsed or certified by TMDB.")
+                }
+                .font(.caption).foregroundStyle(.secondary)
+            }
         }
         .formStyle(.grouped)
     }

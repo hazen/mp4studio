@@ -73,6 +73,18 @@ struct UnitTests {
         #expect(r.sections[3].fields == [.init(name: "00:00:00.000", value: "en:Chapter 1")])
     }
 
+    @Test func tmdbParsing() throws {
+        let search = #"{"results":[{"id":1,"name":"Doctor Who","first_air_date":"2005-03-26","overview":"x","poster_path":"/a.jpg"},{"id":2,"name":"No Date"}]}"#
+        let results = try TMDBClient.parseSearch(Data(search.utf8), type: .tv)
+        #expect(results.map(\.title) == ["Doctor Who", "No Date"])
+        #expect(results[0].year == "2005" && results[1].year == nil && results[1].posterPath == nil)
+
+        let images = #"{"posters":[{"file_path":"/fr.jpg","width":1000,"height":1500,"iso_639_1":"fr","vote_average":9},{"file_path":"/none.jpg","width":1000,"height":1500,"iso_639_1":null,"vote_average":8},{"file_path":"/en-low.jpg","width":500,"height":750,"iso_639_1":"en","vote_average":2},{"file_path":"/en-high.jpg","width":2000,"height":3000,"iso_639_1":"en","vote_average":5}]}"#
+        let posters = try TMDBClient.parsePosters(Data(images.utf8), preferring: "en")
+        #expect(posters.map(\.filePath) == ["/en-high.jpg", "/en-low.jpg", "/none.jpg", "/fr.jpg"])
+        #expect(TMDBClient.imageURL("/a.jpg").absoluteString == "https://image.tmdb.org/t/p/w342/a.jpg")
+    }
+
     @Test func selectionRules() throws {
         let json = """
         {"streams":[{"index":0,"codec_type":"video","codec_name":"h264"},
