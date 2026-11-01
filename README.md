@@ -52,7 +52,7 @@ To use your own app icon, put it at `Resources/AppIcon.icns`. That path is gitig
 ## Features
 
 - **Convert**: open several files at once (or drop them on the Dock icon), choose tracks, set language, title, default and forced flags, add external .srt or audio files, and queue.
-  - Video: pass-through, x264 (CRF or 2-pass), x265, or Apple VideoToolbox H.264/HEVC. Device targets cap the resolution and set the H.264 profile and level.
+  - Video: pass-through, x264 (CRF or 2-pass), x265, HandBrake's Apple TV 4K HEVC settings (x265 10-bit, 30 Mbps 2-pass), or Apple VideoToolbox H.264/HEVC. Device targets cap the resolution and set the H.264 profile and level.
   - Audio: AAC stereo, with an optional stereo track added before surround. Surround can be AC3, E-AC3 or pass-through. DTS and TrueHD become AC3 in MP4.
   - Subtitles: soft (tx3g in MP4) or burned in.
   - Also: segment extraction, square pixels for anamorphic video, chapters, fast start, and iTunes metadata written after conversion.

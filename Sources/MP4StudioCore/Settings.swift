@@ -15,7 +15,7 @@ public enum OutputContainer: String, Codable, Sendable, CaseIterable, Identifiab
 }
 
 public enum VideoCodecChoice: String, Codable, Sendable, CaseIterable, Identifiable {
-    case passthrough, x264, x264TwoPass, x265, h264Hardware, hevcHardware
+    case passthrough, x264, x264TwoPass, x265, handBrakeAppleTV4K, h264Hardware, hevcHardware
     public var id: String { rawValue }
 
     public var label: String {
@@ -24,6 +24,7 @@ public enum VideoCodecChoice: String, Codable, Sendable, CaseIterable, Identifia
         case .x264: return "H.264 – x264, constant quality"
         case .x264TwoPass: return "H.264 – x264, 2-pass bitrate"
         case .x265: return "HEVC – x265, constant quality"
+        case .handBrakeAppleTV4K: return "HEVC – x265 10-bit, HandBrake Apple TV 4K"
         case .h264Hardware: return "H.264 – Apple hardware (fast)"
         case .hevcHardware: return "HEVC – Apple hardware (fast)"
         }
@@ -33,13 +34,17 @@ public enum VideoCodecChoice: String, Codable, Sendable, CaseIterable, Identifia
     public var usesCRF: Bool { self == .x264 || self == .x265 }
     public var usesHardwareQuality: Bool { self == .h264Hardware || self == .hevcHardware }
     public var usesBitrate: Bool { self == .x264TwoPass }
+    public var isTwoPass: Bool { self == .x264TwoPass || self == .handBrakeAppleTV4K }
     public var usesEncoderPreset: Bool { self == .x264 || self == .x264TwoPass || self == .x265 }
-    public var isHEVC: Bool { self == .x265 || self == .hevcHardware }
+    public var isHEVC: Bool { self == .x265 || self == .handBrakeAppleTV4K || self == .hevcHardware }
+    /// Resolution cap built into the codec choice (HandBrake's preset fits video within 3840x2160).
+    public var maxWidth: Int? { self == .handBrakeAppleTV4K ? 3840 : nil }
+    public var maxHeight: Int? { self == .handBrakeAppleTV4K ? 2160 : nil }
     public var encoderName: String? {
         switch self {
         case .passthrough: return nil
         case .x264, .x264TwoPass: return "libx264"
-        case .x265: return "libx265"
+        case .x265, .handBrakeAppleTV4K: return "libx265"
         case .h264Hardware: return "h264_videotoolbox"
         case .hevcHardware: return "hevc_videotoolbox"
         }
@@ -147,7 +152,7 @@ public struct ConvertSettings: Codable, Equatable, Sendable {
 
     /// The tighter of the user's width cap and the device's.
     public var effectiveMaxWidth: Int? {
-        let caps = [maxWidth > 0 ? maxWidth : nil, device.maxWidth].compactMap { $0 }
+        let caps = [maxWidth > 0 ? maxWidth : nil, device.maxWidth, videoCodec.maxWidth].compactMap { $0 }
         return caps.min()
     }
 
@@ -257,6 +262,9 @@ public struct Preset: Codable, Identifiable, Equatable, Sendable {
         var hevc = ConvertSettings()
         hevc.videoCodec = .hevcHardware
 
+        var handBrake = ConvertSettings()
+        handBrake.videoCodec = .handBrakeAppleTV4K
+
         var keepAudio = ConvertSettings()
         keepAudio.surroundAction = .passthrough
         keepAudio.surroundBitrateKbps = 448
@@ -278,6 +286,7 @@ public struct Preset: Codable, Identifiable, Equatable, Sendable {
         return [
             Preset(name: "Apple TV – remux, E-AC3 surround", settings: appleTV),
             Preset(name: "Apple TV 4K – HEVC hardware", settings: hevc),
+            Preset(name: "Apple TV 4K – HandBrake HEVC (x265)", settings: handBrake),
             Preset(name: "Remux – keep original surround", settings: keepAudio),
             Preset(name: "Universal H.264 (stereo)", settings: universal),
             Preset(name: "MKV remux", settings: mkv),
