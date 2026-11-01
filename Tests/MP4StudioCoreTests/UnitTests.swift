@@ -104,13 +104,12 @@ struct UnitTests {
         let plan = try ConvertBuilder(tools: tools, capabilities: .full).plan(ConvertRequest(
             main: file, selectedTrackIDs: Set(file.tracks.map(\.id)), settings: s,
             outputURL: URL(fileURLWithPath: "/tmp/o.m4v"), temporaryDirectory: URL(fileURLWithPath: "/tmp")))
-        let args = plan.steps[1].arguments
+        let args = plan.steps[0].arguments
         let graph = args[args.firstIndex(of: "-filter_complex")! + 1]
         #expect(graph == "[0:0]bwdif=mode=send_frame:deint=interlaced,fps=60,scale='min(3840,iw)':'min(2160,ih)':force_original_aspect_ratio=decrease:force_divisible_by=2,format=yuv420p10le[v0]")
         let joined = args.joined(separator: " ")
-        #expect(plan.steps.count == 2)
-        #expect(plan.steps[0].arguments.joined(separator: " ").contains(":pass=1:stats="))
-        #expect(joined.contains("-c:0 libx265 -preset:0 slow -b:0 30000k -profile:0 main10 -tag:0 hvc1 -x265-params:0 strong-intra-smoothing=0:rect=0:aq-mode=1:rd=4:psy-rd=0.75:psy-rdoq=4.0:rdoq-level=1:rskip=2:pass=2:stats="))
+        #expect(plan.steps.count == 1)
+        #expect(joined.contains("-c:0 libx265 -preset:0 slow -crf:0 24 -profile:0 main10 -tag:0 hvc1 -x265-params:0 strong-intra-smoothing=0:rect=0:aq-mode=1:rd=4:psy-rd=0.75:psy-rdoq=4.0:rdoq-level=1:rskip=2:log-level=error"))
         // A stereo AAC track is copied as is, with no AC3 or E-AC3 track added.
         #expect(joined.contains("-map 0:1 -c:1 copy"))
         #expect(!joined.contains("ac3"))

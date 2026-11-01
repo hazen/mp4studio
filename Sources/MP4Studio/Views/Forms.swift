@@ -46,7 +46,7 @@ struct VideoSettingsForm: View {
                     .font(.caption).foregroundStyle(.secondary)
             }
             if s.videoCodec == .handBrakeAppleTV4K {
-                Text("Matches the video settings of HandBrake's Apple 2160p60 4K HEVC Surround preset: x265 10-bit, slow, up to 3840×2160 and 60 fps, with decomb deinterlacing. Encodes at a 30 Mbps average bitrate in 2 passes, so it's slow.")
+                Text("Matches the video settings of HandBrake's Apple 2160p60 4K HEVC Surround preset: x265 10-bit, slow, RF 24, up to 3840×2160 and a peak of 60 fps, with decomb deinterlacing. Encoding is slow.")
                     .font(.caption).foregroundStyle(.secondary)
             }
             if s.videoCodec.usesBitrate {

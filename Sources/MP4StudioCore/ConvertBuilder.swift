@@ -259,8 +259,7 @@ public struct ConvertBuilder {
             steps.append(JobStep(label: "Pass 1 of 2 (analysis)", tool: .ffmpeg, executable: ffmpeg,
                                  arguments: base + videoSection(pass: 1) + ["-an", "-sn", "-dn", "-f", "null", "/dev/null"],
                                  progress: .ffmpeg(totalSeconds: total)))
-            let logs = s.videoCodec == .x264TwoPass ? [passLog + "-0.log", passLog + "-0.log.mbtree"] : [passLog, passLog + ".cutree"]
-            temporaryFiles += logs.map { URL(fileURLWithPath: $0) }
+            temporaryFiles += [passLog + "-0.log", passLog + "-0.log.mbtree"].map { URL(fileURLWithPath: $0) }
         }
         let pass = s.videoCodec.isTwoPass ? 2 : 0
         steps.append(JobStep(label: pass == 2 ? "Pass 2 of 2 (encode)" : "Converting",
@@ -295,9 +294,9 @@ public struct ConvertBuilder {
             a = ["-c:\(o)", "libx265", "-preset:\(o)", s.encoderPreset, "-crf:\(o)", "\(s.crf)", "-tag:\(o)", "hvc1",
                  "-x265-params:\(o)", "log-level=error"]
         case .handBrakeAppleTV4K:
-            // Video settings of HandBrake's "Apple 2160p60 4K HEVC Surround" preset, at a 2-pass average bitrate.
-            a = ["-c:\(o)", "libx265", "-preset:\(o)", "slow", "-b:\(o)", "\(Self.handBrakeBitrateKbps)k", "-profile:\(o)", "main10", "-tag:\(o)", "hvc1",
-                 "-x265-params:\(o)", Self.handBrakeX265Params + ":pass=\(pass):stats=\(passLog):log-level=error"]
+            // Video settings of HandBrake's "Apple 2160p60 4K HEVC Surround" preset.
+            a = ["-c:\(o)", "libx265", "-preset:\(o)", "slow", "-crf:\(o)", "24", "-profile:\(o)", "main10", "-tag:\(o)", "hvc1",
+                 "-x265-params:\(o)", Self.handBrakeX265Params + ":log-level=error"]
             return a
         case .h264Hardware:
             a = ["-c:\(o)", "h264_videotoolbox", "-q:\(o)", "\(s.hardwareQuality)"]
@@ -312,7 +311,6 @@ public struct ConvertBuilder {
         return a
     }
 
-    static let handBrakeBitrateKbps = 30000
     static let handBrakeX265Params = "strong-intra-smoothing=0:rect=0:aq-mode=1:rd=4:psy-rd=0.75:psy-rdoq=4.0:rdoq-level=1:rskip=2"
 
     func pixelFormat(for v: MediaTrack, codec: VideoCodecChoice) -> String {

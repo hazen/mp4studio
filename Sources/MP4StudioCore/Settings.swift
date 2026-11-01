@@ -34,7 +34,7 @@ public enum VideoCodecChoice: String, Codable, Sendable, CaseIterable, Identifia
     public var usesCRF: Bool { self == .x264 || self == .x265 }
     public var usesHardwareQuality: Bool { self == .h264Hardware || self == .hevcHardware }
     public var usesBitrate: Bool { self == .x264TwoPass }
-    public var isTwoPass: Bool { self == .x264TwoPass || self == .handBrakeAppleTV4K }
+    public var isTwoPass: Bool { self == .x264TwoPass }
     public var usesEncoderPreset: Bool { self == .x264 || self == .x264TwoPass || self == .x265 }
     public var isHEVC: Bool { self == .x265 || self == .handBrakeAppleTV4K || self == .hevcHardware }
     /// Resolution cap built into the codec choice (HandBrake's preset fits video within 3840x2160).
