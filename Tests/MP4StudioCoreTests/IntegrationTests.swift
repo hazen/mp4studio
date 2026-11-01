@@ -129,7 +129,7 @@ struct IntegrationTests {
         let r = try await probe(out)
         #expect(abs(r.duration - 4) < 0.3)
         let v = r.tracks[0]
-        #expect(v.width == 640 && !v.isAnamorphic)
+        #expect(v.width == 640 && (v.height ?? 0) < 480 && !v.isAnamorphic)
         #expect(r.tracks.filter { $0.kind == .audio }.allSatisfy { $0.codec == "aac" && ($0.channels ?? 0) <= 2 })
     }
 
@@ -170,7 +170,7 @@ struct IntegrationTests {
         try await run(plan)
         let r = try await probe(out)
         #expect(r.tracks.map(\.codec) == ["hevc", "aac"])
-        #expect(r.tracks[0].isTenBit && r.tracks[0].width == 640)
+        #expect(r.tracks[0].isTenBit && r.tracks[0].width == 640 && r.tracks[0].height == 360)
         #expect(abs((r.tracks[0].frameRate ?? 0) - 60) < 0.5)
     }
 

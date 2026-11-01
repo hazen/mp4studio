@@ -64,7 +64,7 @@ struct VideoSettingsForm: View {
             }
             .disabled(!s.videoCodec.reencodes)
             Toggle("Square pixels (fix anamorphic video)", isOn: $s.squarePixels)
-                .help("Sets the pixel aspect ratio to 1:1. With pass-through this rewrites the H.264/HEVC header; otherwise the video is rescaled.")
+                .help("Sets the pixel aspect ratio to 1:1. With pass-through this rewrites the H.264/HEVC header; otherwise the video is rescaled, shrinking the longer side rather than enlarging the other.")
             Toggle("Copy chapters", isOn: $s.copyChapters)
             if s.container.isMP4 {
                 Toggle("Optimize for streaming (fast start)", isOn: $s.webOptimized)

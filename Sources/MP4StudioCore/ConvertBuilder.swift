@@ -114,7 +114,8 @@ public struct ConvertBuilder {
                     if (v.frameRate ?? 0) > 60.5 { filters.append("fps=60") }
                 }
                 if s.squarePixels && v.isAnamorphic {
-                    filters.append("scale=trunc(iw*sar/2)*2:ih")
+                    // Shrink whichever dimension is too long, so the output is never larger than the source.
+                    filters.append("scale='if(gt(sar,1),iw,trunc(iw*sar/2)*2)':'if(gt(sar,1),trunc(ih/sar/2)*2,ih)'")
                 }
                 let tooTall = s.videoCodec.maxHeight.map { (v.height ?? 0) > $0 } ?? false
                 if let maxW = s.effectiveMaxWidth, (v.width ?? .max) > maxW || (s.squarePixels && v.isAnamorphic) || tooTall {
