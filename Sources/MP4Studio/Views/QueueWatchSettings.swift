@@ -224,7 +224,7 @@ private struct ToolSettings: View {
                     ToolRow(tool: tool, architecture: architectures[tool])
                 }
             } footer: {
-                Text("Leave a path blank to use the Homebrew install (/opt/homebrew/bin). Install everything with: brew install ffmpeg mkvtoolnix gpac atomicparsley")
+                Text("Leave a path blank to use the Homebrew install (/opt/homebrew/bin). Install everything with: brew install ffmpeg mkvtoolnix gpac atomicparsley media-info, or brew bundle in the source folder.")
                     .font(.caption).foregroundStyle(.secondary).textSelection(.enabled)
             }
             if !app.capabilities.encoders.isEmpty {

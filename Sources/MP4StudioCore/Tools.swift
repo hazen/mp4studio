@@ -6,11 +6,15 @@ public enum Tool: String, CaseIterable, Codable, Sendable, Identifiable {
     case mkvmerge, mkvextract
     case mp4box = "MP4Box"
     case atomicParsley = "AtomicParsley"
+    case mediainfo
     /// MP4Studio's own text recognition helper, shipped next to the app's executable.
     case subtitleOCR = "mp4studio-ocr"
 
     /// The tools users install and configure. The OCR helper comes with the app.
-    public static let allCases: [Tool] = [.ffmpeg, .ffprobe, .ffplay, .mkvmerge, .mkvextract, .mp4box, .atomicParsley]
+    public static let allCases: [Tool] = [.ffmpeg, .ffprobe, .ffplay, .mkvmerge, .mkvextract, .mp4box, .atomicParsley, .mediainfo]
+
+    /// Optional tools add a feature but aren't reported as missing.
+    public var isOptional: Bool { self == .mediainfo }
 
     public var id: String { rawValue }
 
@@ -21,6 +25,7 @@ public enum Tool: String, CaseIterable, Codable, Sendable, Identifiable {
         case .mkvmerge, .mkvextract: return "mkvtoolnix"
         case .mp4box: return "gpac"
         case .atomicParsley: return "atomicparsley"
+        case .mediainfo: return "media-info"
         case .subtitleOCR: return ""
         }
     }
@@ -34,6 +39,7 @@ public enum Tool: String, CaseIterable, Codable, Sendable, Identifiable {
         case .mkvextract: return "Extracting tracks from MKV"
         case .mp4box: return "MP4 track editing, splitting, joining"
         case .atomicParsley: return "iTunes-style MP4 metadata and artwork"
+        case .mediainfo: return "Detailed file info (optional)"
         case .subtitleOCR: return "Reading text from image subtitles"
         }
     }

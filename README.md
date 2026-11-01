@@ -10,8 +10,10 @@ MP4Studio was inspired by [MP4tools](https://emmgunn.com/wp/mp4tools-home/) by E
 - [Homebrew](https://brew.sh) and these tools:
 
 ```sh
-brew install ffmpeg mkvtoolnix gpac atomicparsley
+brew install ffmpeg mkvtoolnix gpac atomicparsley media-info
 ```
+
+From a clone of this repository, `brew bundle` installs the same tools from the [Brewfile](Brewfile).
 
 | Tool | Used for |
 |---|---|
@@ -19,6 +21,7 @@ brew install ffmpeg mkvtoolnix gpac atomicparsley
 | mkvmerge / mkvextract (mkvtoolnix) | MKV track editing, splitting, joining and extraction |
 | MP4Box (gpac) | MP4/M4V track editing and joining |
 | AtomicParsley | iTunes-style tags, cast/crew, rating, artwork |
+| mediainfo (media-info, optional) | The Info panel: detailed file and track info |
 
 MP4Studio finds the tools in `/opt/homebrew/bin` automatically. You can point it at other copies in **Settings ▸ Tools**, which also confirms that each tool is a native Apple silicon build.
 
@@ -41,6 +44,7 @@ Building needs Xcode or the Command Line Tools (`xcode-select --install`).
 ```sh
 git clone https://github.com/hazen/mp4studio.git
 cd mp4studio
+brew bundle                      # installs the tools listed in the Brewfile
 scripts/build-app.sh --install   # builds build/MP4Studio.app and copies it to /Applications
 scripts/make-dmg.sh              # or: builds build/MP4Studio-<version>.dmg
 ```
@@ -56,6 +60,7 @@ To use your own app icon, put it at `Resources/AppIcon.icns`. That path is gitig
   - Audio: AAC stereo, with an optional stereo track added before surround. Surround can be AC3, E-AC3 or pass-through. DTS and TrueHD become AC3 in MP4.
   - Subtitles: soft (tx3g in MP4) or burned in.
   - Also: segment extraction, square pixels for anamorphic video, chapters, fast start, and iTunes metadata written after conversion.
+- **Info panel**: Convert and Edit Tracks show MediaInfo's report for the current file beside the track list, one card per track with a short summary. Toggle it with the Info toolbar button.
 - **Presets**: conversion settings plus track-selection rules (all, first, by language, none; with fallback), and an option to burn in forced subtitles.
 - **Edit Tracks**: remove or add tracks and fix language, name and default/forced flags without re-encoding. Uses MP4Box for MP4/M4V and mkvmerge for MKV. The original file is never changed.
 - **Extract Tracks**: mkvextract for MKV, ffmpeg stream copy for everything else.

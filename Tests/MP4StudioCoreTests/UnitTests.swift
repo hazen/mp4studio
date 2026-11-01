@@ -48,6 +48,31 @@ struct UnitTests {
         #expect(f.title == "My Title" && f.kind == .tvShow && f.ratingID == "mpaa|R" && f.cast == "A, B" && art)
     }
 
+    @Test func mediaInfoParsing() {
+        let text = """
+        General
+        Complete name                            : /x/a.mkv
+        Format                                   : Matroska
+        Overall bit rate                         : 6 553 kb/s
+
+        Video
+        ID                                       : 1
+        Format profile                           : High@L4.2
+
+        Audio #1
+        Channel(s)                               : 2 channels
+
+        Menu
+        00:00:00.000                             : en:Chapter 1
+
+        """
+        let r = MediaInfoReport.parse(text)
+        #expect(r.sections.map(\.title) == ["General", "Video", "Audio #1", "Menu"])
+        #expect(r.sections[0].value("Overall bit rate") == "6 553 kb/s")
+        #expect(r.sections[1].value("Format profile") == "High@L4.2")
+        #expect(r.sections[3].fields == [.init(name: "00:00:00.000", value: "en:Chapter 1")])
+    }
+
     @Test func selectionRules() throws {
         let json = """
         {"streams":[{"index":0,"codec_type":"video","codec_name":"h264"},

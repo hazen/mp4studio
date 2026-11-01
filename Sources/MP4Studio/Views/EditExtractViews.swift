@@ -13,6 +13,7 @@ struct EditTracksView: View {
     @State private var outputName = ""
     @State private var errors: [String] = []
     @State private var note: String?
+    @State private var conflict: OutputConflict?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
@@ -63,6 +64,8 @@ struct EditTracksView: View {
         .onFileDrop { urls in
             if file == nil { open(urls) } else { add(urls) }
         }
+        .outputConflictAlert($conflict)
+        .mediaInfoInspector(url: file?.url)
     }
 
     func toolNote(_ f: MediaFile) -> String {
@@ -119,12 +122,28 @@ struct EditTracksView: View {
     }
 
     func queue() {
+        guard let file else { return }
+        if let existing = app.existingOutput(in: app.outputFolder, baseName: outputBaseName(file), extension: outputExtension(file), sources: sources(file)) {
+            conflict = OutputConflict(existing: [existing]) { queue($0) }
+        } else {
+            queue(.keepBoth)
+        }
+    }
+
+    func outputBaseName(_ f: MediaFile) -> String {
+        outputName.trimmingCharacters(in: .whitespaces).isEmpty ? f.url.deletingPathExtension().lastPathComponent + " edited" : outputName
+    }
+
+    func sources(_ f: MediaFile) -> [URL] { [f.url] + added.map(\.url) }
+
+    func queue(_ existing: ExistingOutput) {
         guard let file, let original else { return }
-        let name = outputName.trimmingCharacters(in: .whitespaces).isEmpty ? file.url.deletingPathExtension().lastPathComponent + " edited" : outputName
-        let output = uniqueURL(in: app.outputFolder, baseName: name, extension: outputExtension(file), reserved: [file.url])
+        let output = app.outputURL(in: app.outputFolder, baseName: outputBaseName(file), extension: outputExtension(file),
+                                   sources: sources(file), existing: existing)
         do {
             let plan = try EditBuilder(tools: app.toolPaths, original: original).plan(EditRequest(
                 main: file, added: added, keptTrackIDs: kept, squarePixels: squarePixels, outputURL: output))
+            if existing == .replace { try app.trashForReplace(output) }
             app.queue.add(plan)
             withAnimation { note = "Queued \(output.lastPathComponent)" }
         } catch {

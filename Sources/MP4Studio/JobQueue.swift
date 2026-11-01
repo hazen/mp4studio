@@ -69,6 +69,11 @@ final class JobQueue {
 
     var pendingCount: Int { jobs.filter { !$0.status.isFinished }.count }
 
+    /// Files that unfinished jobs will write, so new jobs don't pick the same names.
+    var pendingOutputs: Set<URL> {
+        Set(jobs.filter { !$0.status.isFinished }.flatMap(\.plan.outputs).map(\.standardizedFileURL))
+    }
+
     @discardableResult
     func add(_ plan: JobPlan) -> Job {
         let stamp = ISO8601DateFormatter().string(from: Date()).replacingOccurrences(of: ":", with: "-")

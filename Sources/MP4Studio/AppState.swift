@@ -82,7 +82,7 @@ final class AppState {
 
     func preset(_ id: UUID?) -> Preset? { presets.first { $0.id == id } }
 
-    var missingTools: [Tool] { Tool.allCases.filter { toolPaths.url(for: $0) == nil } }
+    var missingTools: [Tool] { Tool.allCases.filter { !$0.isOptional && toolPaths.url(for: $0) == nil } }
 
     func refreshCapabilities() {
         guard let ffmpeg = toolPaths.url(for: .ffmpeg) else { capabilities = FFmpegCapabilities(); return }
@@ -96,6 +96,35 @@ final class AppState {
     func convertBuilder() -> ConvertBuilder {
         // Before detection finishes, assume a full build rather than blocking the user.
         ConvertBuilder(tools: toolPaths, capabilities: capabilities.encoders.isEmpty ? .full : capabilities)
+    }
+
+    /// The output path for a new job. A number is added to the name for Keep Both, and whenever a source file
+    /// or an unfinished job already uses the name.
+    func outputURL(in folder: URL, baseName: String, extension ext: String, sources: [URL],
+                   existing: ExistingOutput = .keepBoth) -> URL {
+        let folder = folder.standardizedFileURL
+        let reserved = queue.pendingOutputs.union(sources.map(\.standardizedFileURL))
+        let plain = folder.appendingPathComponent(baseName).appendingPathExtension(ext)
+        if existing == .replace && !reserved.contains(plain) { return plain }
+        return uniqueURL(in: folder, baseName: baseName, extension: ext, reserved: reserved)
+    }
+
+    /// The file on disk that a new output named `baseName` would replace, if any. Sources are never replaced.
+    func existingOutput(in folder: URL, baseName: String, extension ext: String, sources: [URL]) -> URL? {
+        let plain = folder.standardizedFileURL.appendingPathComponent(baseName).appendingPathExtension(ext)
+        let reserved = queue.pendingOutputs.union(sources.map(\.standardizedFileURL))
+        guard FileManager.default.fileExists(atPath: plain.path), !reserved.contains(plain) else { return nil }
+        return plain
+    }
+
+    /// Replace moves the old file to the Trash when the job is queued, so it can be recovered if the job fails.
+    func trashForReplace(_ url: URL) throws {
+        guard FileManager.default.fileExists(atPath: url.path) else { return }
+        do {
+            try FileManager.default.trashItem(at: url, resultingItemURL: nil)
+        } catch {
+            throw ToolError.invalid("Couldn't move “\(url.lastPathComponent)” to the Trash, so it wasn't replaced. Choose Keep Both or another name.")
+        }
     }
 
     /// Plays the file with ffplay using the chosen audio and subtitle streams.

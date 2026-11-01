@@ -124,6 +124,7 @@ private struct JoinPane: View {
     @State private var container = OutputContainer.mkv
     @State private var errors: [String] = []
     @State private var note: String?
+    @State private var conflict: OutputConflict?
 
     var body: some View {
         Form {
@@ -172,6 +173,7 @@ private struct JoinPane: View {
         }
         .formStyle(.grouped)
         .onFileDrop { add($0) }
+        .outputConflictAlert($conflict)
     }
 
     var toolNote: String {
@@ -204,9 +206,22 @@ private struct JoinPane: View {
     }
 
     func join() {
-        let output = uniqueURL(in: app.outputFolder, baseName: name.isEmpty ? "Joined" : name, extension: container.fileExtension)
+        if let existing = app.existingOutput(in: app.outputFolder, baseName: joinedName, extension: container.fileExtension, sources: files.map(\.url)) {
+            conflict = OutputConflict(existing: [existing]) { join($0) }
+        } else {
+            join(.keepBoth)
+        }
+    }
+
+    var joinedName: String { name.isEmpty ? "Joined" : name }
+
+    func join(_ existing: ExistingOutput) {
+        let output = app.outputURL(in: app.outputFolder, baseName: joinedName, extension: container.fileExtension,
+                                   sources: files.map(\.url), existing: existing)
         do {
-            app.queue.add(try JoinBuilder(tools: app.toolPaths).plan(files: files, outputURL: output, temporaryDirectory: app.temporaryDirectory))
+            let plan = try JoinBuilder(tools: app.toolPaths).plan(files: files, outputURL: output, temporaryDirectory: app.temporaryDirectory)
+            if existing == .replace { try app.trashForReplace(output) }
+            app.queue.add(plan)
             withAnimation { note = "Queued \(output.lastPathComponent)" }
         } catch {
             errors.append(error.localizedDescription)
