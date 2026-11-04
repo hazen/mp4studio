@@ -207,8 +207,21 @@ public struct SelectionRules: Codable, Equatable, Sendable {
     public var subtitleFallbackToFirst: Bool = false
     /// Burn the first forced subtitle track into the video (needs a re-encoding video codec).
     public var burnForcedSubtitles: Bool = false
+    /// Given to audio and subtitle tracks the source leaves undetermined, since Apple TV shows those as "Unknown". "und" leaves them.
+    public var unlabeledLanguage: String = "eng"
 
     public init() {}
+
+    /// The file with undetermined audio and subtitle tracks set to `unlabeledLanguage`.
+    public func labeling(_ file: MediaFile) -> MediaFile {
+        let language = Languages.normalize(unlabeledLanguage)
+        guard language != "und" else { return file }
+        var file = file
+        for i in file.tracks.indices where file.tracks[i].language == "und" && (file.tracks[i].kind == .audio || file.tracks[i].kind == .subtitle) {
+            file.tracks[i].language = language
+        }
+        return file
+    }
 
     public func selectedTrackIDs(in file: MediaFile) -> Set<String> {
         var ids = Set(file.tracks(.video).prefix(1).map(\.id))
@@ -239,6 +252,7 @@ public struct SelectionRules: Codable, Equatable, Sendable {
         subtitleLanguages = (try? c.decode([String].self, forKey: .subtitleLanguages)) ?? d.subtitleLanguages
         subtitleFallbackToFirst = (try? c.decode(Bool.self, forKey: .subtitleFallbackToFirst)) ?? d.subtitleFallbackToFirst
         burnForcedSubtitles = (try? c.decode(Bool.self, forKey: .burnForcedSubtitles)) ?? d.burnForcedSubtitles
+        unlabeledLanguage = (try? c.decode(String.self, forKey: .unlabeledLanguage)) ?? d.unlabeledLanguage
     }
 }
 

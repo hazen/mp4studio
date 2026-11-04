@@ -137,6 +137,11 @@ struct RulesForm: View {
                 Toggle("Burn in the first forced subtitle track", isOn: $rules.burnForcedSubtitles)
                     .help("Only when the preset re-encodes video.")
             }
+            Section("Unlabeled tracks") {
+                LabeledContent("Language") { LanguagePicker(code: $rules.unlabeledLanguage) }
+                Text("Audio and subtitle tracks without a language get this one, so Apple TV doesn't list them as Unknown. Undetermined leaves them unlabeled.")
+                    .font(.caption).foregroundStyle(.secondary)
+            }
         }
         .formStyle(.grouped)
     }

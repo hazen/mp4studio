@@ -22,7 +22,7 @@ final class ConvertItem: Identifiable {
     var lastError: String?
 
     init(file: MediaFile, preset: Preset) {
-        self.file = file
+        self.file = preset.rules.labeling(file)
         settings = preset.settings
         presetID = preset.id
         selected = preset.rules.selectedTrackIDs(in: file)
@@ -39,6 +39,7 @@ final class ConvertItem: Identifiable {
     func apply(_ preset: Preset) {
         settings = preset.settings
         presetID = preset.id
+        file = preset.rules.labeling(file)
         selected = preset.rules.selectedTrackIDs(in: file).union(extras.flatMap(\.tracks).map(\.id))
         burnTrackID = nil
         applyBurnRule(preset.rules)

@@ -105,6 +105,21 @@ struct UnitTests {
         #expect(rules.selectedTrackIDs(in: file) == ["0:0", "0:2", "0:3"])
     }
 
+    @Test func unlabeledTracksGetTheRulesLanguage() throws {
+        let json = """
+        {"streams":[{"index":0,"codec_type":"video","codec_name":"h264"},
+         {"index":1,"codec_type":"audio","codec_name":"eac3","tags":{"language":"und"}},
+         {"index":2,"codec_type":"audio","codec_name":"aac","tags":{"language":"fre"}},
+         {"index":3,"codec_type":"subtitle","codec_name":"mov_text"}],
+         "format":{"duration":"10"}}
+        """
+        let file = try MediaFile.parse(ffprobeJSON: Data(json.utf8), url: URL(fileURLWithPath: "/x/a.ts"))
+        var rules = SelectionRules()
+        #expect(rules.labeling(file).tracks.map(\.language) == ["und", "eng", "fre", "eng"])
+        rules.unlabeledLanguage = "und"
+        #expect(rules.labeling(file).tracks.map(\.language) == ["und", "und", "fre", "und"])
+    }
+
     @Test func appleTVDefaultsConvertTrueHDToEAC3() throws {
         let json = """
         {"streams":[{"index":0,"codec_type":"video","codec_name":"hevc","width":3840},
