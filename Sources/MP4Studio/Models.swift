@@ -22,7 +22,7 @@ final class ConvertItem: Identifiable {
     var lastError: String?
 
     init(file: MediaFile, preset: Preset) {
-        self.file = file
+        self.file = preset.rules.labeling(file)
         settings = preset.settings
         presetID = preset.id
         selected = preset.rules.selectedTrackIDs(in: file)
@@ -39,6 +39,7 @@ final class ConvertItem: Identifiable {
     func apply(_ preset: Preset) {
         settings = preset.settings
         presetID = preset.id
+        file = preset.rules.labeling(file)
         selected = preset.rules.selectedTrackIDs(in: file).union(extras.flatMap(\.tracks).map(\.id))
         burnTrackID = nil
         applyBurnRule(preset.rules)
@@ -83,17 +84,25 @@ final class ConvertItem: Identifiable {
         }
     }
 
-    func outputURL(in folder: URL) -> URL {
-        let name = outputName.trimmingCharacters(in: .whitespaces).isEmpty ? file.url.deletingPathExtension().lastPathComponent : outputName
-        return uniqueURL(in: folder, baseName: name, extension: settings.container.fileExtension, reserved: [file.url])
+    var outputBaseName: String {
+        outputName.trimmingCharacters(in: .whitespaces).isEmpty ? file.url.deletingPathExtension().lastPathComponent : outputName
     }
 
-    func request(outputFolder: URL, temporaryDirectory: URL) throws -> ConvertRequest {
+    var sourceURLs: [URL] { [file.url] + extras.map(\.url) }
+
+    func outputURL(in folder: URL, app: AppState, existing: ExistingOutput = .keepBoth) -> URL {
+        app.outputURL(in: folder, baseName: outputBaseName, extension: settings.container.fileExtension, sources: sourceURLs, existing: existing)
+    }
+
+    func existingOutput(in folder: URL, app: AppState) -> URL? {
+        app.existingOutput(in: folder, baseName: outputBaseName, extension: settings.container.fileExtension, sources: sourceURLs)
+    }
+
+    func request(output: URL, temporaryDirectory: URL) throws -> ConvertRequest {
         let start = segmentStart.isEmpty ? nil : TimeCode.parse(segmentStart)
         let end = segmentEnd.isEmpty ? nil : TimeCode.parse(segmentEnd)
         if !segmentStart.isEmpty && start == nil { throw ToolError.invalid("The start time isn't valid. Use HH:MM:SS or seconds.") }
         if !segmentEnd.isEmpty && end == nil { throw ToolError.invalid("The end time isn't valid. Use HH:MM:SS or seconds.") }
-        let output = outputURL(in: outputFolder)
         if output.standardizedFileURL == file.url.standardizedFileURL {
             throw ToolError.invalid("The output would overwrite the source file. Choose another name or folder.")
         }
@@ -222,7 +231,8 @@ final class WatchFolderModel {
         do {
             let file = try await app.probe(url)
             let item = ConvertItem(file: file, preset: preset)
-            let plan = try app.convertBuilder().plan(try item.request(outputFolder: outputFolder, temporaryDirectory: app.temporaryDirectory))
+            let output = item.outputURL(in: outputFolder, app: app)
+            let plan = try app.convertBuilder().plan(try item.request(output: output, temporaryDirectory: app.temporaryDirectory))
             app.queue.add(plan)
             log("Queued \(url.lastPathComponent) with “\(preset.name)”.")
         } catch {

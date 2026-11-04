@@ -2,6 +2,39 @@ import AppKit
 import MP4StudioCore
 import SwiftUI
 
+/// What to do when an output file already exists.
+enum ExistingOutput { case replace, keepBoth }
+
+/// Output files that already exist; `resolve` runs with the user's choice.
+struct OutputConflict {
+    let existing: [URL]
+    let resolve: (ExistingOutput) -> Void
+
+    var title: String {
+        existing.count == 1 ? "“\(existing[0].lastPathComponent)” already exists." : "\(existing.count) output files already exist."
+    }
+
+    var message: String {
+        let files = existing.count == 1 ? "the existing file" : "the existing files (\(existing.map(\.lastPathComponent).joined(separator: ", ")))"
+        return "Replace moves \(files) to the Trash. Keep Both saves the new \(existing.count == 1 ? "file" : "files") with a number added to the name."
+    }
+}
+
+extension View {
+    /// Asks whether to replace existing output files or keep both.
+    func outputConflictAlert(_ conflict: Binding<OutputConflict?>) -> some View {
+        alert(conflict.wrappedValue?.title ?? "",
+              isPresented: Binding(get: { conflict.wrappedValue != nil }, set: { if !$0 { conflict.wrappedValue = nil } }),
+              presenting: conflict.wrappedValue) { c in
+            Button("Replace", role: .destructive) { c.resolve(.replace) }
+            Button("Keep Both") { c.resolve(.keepBoth) }
+            Button("Cancel", role: .cancel) {}
+        } message: { c in
+            Text(c.message)
+        }
+    }
+}
+
 /// Large drop target shown when nothing is loaded.
 struct DropPrompt: View {
     let title: String

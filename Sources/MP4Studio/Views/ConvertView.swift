@@ -29,11 +29,13 @@ struct ConvertView: View {
         }
         .overlay { if model.isLoading { ProgressView().controlSize(.large) } }
         .onFileDrop { model.open($0, app: app) }
+        .mediaInfoInspector(url: model.current?.file.url)
     }
 }
 
 private struct FileSidebar: View {
     @Environment(AppState.self) private var app
+    @State private var conflict: OutputConflict?
 
     var body: some View {
         let model = app.convert
@@ -68,6 +70,7 @@ private struct FileSidebar: View {
             .buttonStyle(.borderless)
             .padding(6)
         }
+        .outputConflictAlert($conflict)
     }
 
     func presetLabel(_ item: ConvertItem) -> String {
@@ -76,11 +79,22 @@ private struct FileSidebar: View {
     }
 
     func queueAll() {
+        let existing = app.convert.items.compactMap { $0.existingOutput(in: app.outputFolder, app: app) }
+        if existing.isEmpty {
+            queueAll(.keepBoth)
+        } else {
+            conflict = OutputConflict(existing: Array(Set(existing)).sorted { $0.path < $1.path }) { queueAll($0) }
+        }
+    }
+
+    func queueAll(_ existing: ExistingOutput) {
         let model = app.convert
         var queued: [ConvertItem] = []
         for item in model.items {
             do {
-                let plan = try app.convertBuilder().plan(try item.request(outputFolder: app.outputFolder, temporaryDirectory: app.temporaryDirectory))
+                let output = item.outputURL(in: app.outputFolder, app: app, existing: existing)
+                let plan = try app.convertBuilder().plan(try item.request(output: output, temporaryDirectory: app.temporaryDirectory))
+                if existing == .replace { try app.trashForReplace(output) }
                 app.queue.add(plan)
                 queued.append(item)
             } catch {
@@ -97,6 +111,7 @@ private struct ConvertDetail: View {
     @Bindable var item: ConvertItem
     @State private var tab = "video"
     @State private var note: String?
+    @State private var conflict: OutputConflict?
 
     var body: some View {
         VSplitView {
@@ -140,6 +155,7 @@ private struct ConvertDetail: View {
             }
             .frame(minHeight: 300)
         }
+        .outputConflictAlert($conflict)
     }
 
     private var header: some View {
@@ -205,7 +221,9 @@ private struct ConvertDetail: View {
     }
 
     private var footer: some View {
-        let preview = Result { try app.convertBuilder().plan(try item.request(outputFolder: app.outputFolder, temporaryDirectory: app.temporaryDirectory)) }
+        let preview = Result {
+            try app.convertBuilder().plan(try item.request(output: item.outputURL(in: app.outputFolder, app: app), temporaryDirectory: app.temporaryDirectory))
+        }
         return VStack(alignment: .leading, spacing: 8) {
             Divider()
             switch preview {
@@ -229,8 +247,18 @@ private struct ConvertDetail: View {
     }
 
     func queue() {
+        if let existing = item.existingOutput(in: app.outputFolder, app: app) {
+            conflict = OutputConflict(existing: [existing]) { queue($0) }
+        } else {
+            queue(.keepBoth)
+        }
+    }
+
+    func queue(_ existing: ExistingOutput) {
         do {
-            let plan = try app.convertBuilder().plan(try item.request(outputFolder: app.outputFolder, temporaryDirectory: app.temporaryDirectory))
+            let output = item.outputURL(in: app.outputFolder, app: app, existing: existing)
+            let plan = try app.convertBuilder().plan(try item.request(output: output, temporaryDirectory: app.temporaryDirectory))
+            if existing == .replace { try app.trashForReplace(output) }
             app.queue.add(plan)
             withAnimation { note = "Queued \(plan.outputs.first?.lastPathComponent ?? "")" }
         } catch {

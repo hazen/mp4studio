@@ -45,6 +45,10 @@ struct VideoSettingsForm: View {
                 Text("Higher is better quality. 60–70 is a good balance on Apple silicon.")
                     .font(.caption).foregroundStyle(.secondary)
             }
+            if s.videoCodec == .handBrakeAppleTV4K {
+                Text("Matches the video settings of HandBrake's Apple 2160p60 4K HEVC Surround preset: x265 10-bit, slow, RF 24, up to 3840×2160 and a peak of 60 fps, with decomb deinterlacing. Encoding is slow.")
+                    .font(.caption).foregroundStyle(.secondary)
+            }
             if s.videoCodec.usesBitrate {
                 TextField("Bitrate (kbps)", value: $s.videoBitrateKbps, format: .number)
             }
@@ -60,7 +64,7 @@ struct VideoSettingsForm: View {
             }
             .disabled(!s.videoCodec.reencodes)
             Toggle("Square pixels (fix anamorphic video)", isOn: $s.squarePixels)
-                .help("Sets the pixel aspect ratio to 1:1. With pass-through this rewrites the H.264/HEVC header; otherwise the video is rescaled.")
+                .help("Sets the pixel aspect ratio to 1:1. With pass-through this rewrites the H.264/HEVC header; otherwise the video is rescaled, shrinking the longer side rather than enlarging the other.")
             Toggle("Copy chapters", isOn: $s.copyChapters)
             if s.container.isMP4 {
                 Toggle("Optimize for streaming (fast start)", isOn: $s.webOptimized)
@@ -98,6 +102,8 @@ struct AudioSettingsForm: View {
                 .disabled(s.surroundAction == .passthrough || s.surroundAction == .aacStereo)
                 Toggle("Add an AAC stereo version before each surround track", isOn: $s.addStereoVersion)
                     .disabled(s.surroundAction == .aacStereo)
+                Text("E-AC3 keeps AC3 and E-AC3 tracks and converts TrueHD, DTS and others to 5.1 E-AC3 for Apple TV. Atmos isn't kept, and 7.1 becomes 5.1.")
+                    .font(.caption).foregroundStyle(.secondary)
                 Text("Pass-through keeps DTS and TrueHD in MKV. For MP4 they're converted to AC3, since Apple players can't play them.")
                     .font(.caption).foregroundStyle(.secondary)
             }
@@ -130,6 +136,11 @@ struct RulesForm: View {
                 }
                 Toggle("Burn in the first forced subtitle track", isOn: $rules.burnForcedSubtitles)
                     .help("Only when the preset re-encodes video.")
+            }
+            Section("Unlabeled tracks") {
+                LabeledContent("Language") { LanguagePicker(code: $rules.unlabeledLanguage) }
+                Text("Audio and subtitle tracks without a language get this one, so Apple TV doesn't list them as Unknown. Undetermined leaves them unlabeled.")
+                    .font(.caption).foregroundStyle(.secondary)
             }
         }
         .formStyle(.grouped)
@@ -207,6 +218,7 @@ struct MetadataForm: View {
 struct ArtworkWell: View {
     @Binding var fields: MetadataFields
     var existing: NSImage?
+    @State private var searching = false
 
     var image: NSImage? {
         if fields.removeArtwork { return nil }
@@ -238,6 +250,8 @@ struct ArtworkWell: View {
                         fields.removeArtwork = false
                     }
                 }
+                Button("Find Online…") { searching = true }
+                    .help("Search The Movie Database for posters")
                 Button("Remove Artwork") {
                     fields.artworkPath = nil
                     fields.removeArtwork = true
@@ -246,6 +260,9 @@ struct ArtworkWell: View {
                 Text("Drop a JPEG or PNG on the box. Posters look best at 2:3.")
                     .font(.caption).foregroundStyle(.secondary)
             }
+        }
+        .sheet(isPresented: $searching) {
+            ArtworkSearchSheet(fields: $fields, current: image)
         }
     }
 }

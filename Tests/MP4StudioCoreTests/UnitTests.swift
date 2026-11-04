@@ -48,6 +48,43 @@ struct UnitTests {
         #expect(f.title == "My Title" && f.kind == .tvShow && f.ratingID == "mpaa|R" && f.cast == "A, B" && art)
     }
 
+    @Test func mediaInfoParsing() {
+        let text = """
+        General
+        Complete name                            : /x/a.mkv
+        Format                                   : Matroska
+        Overall bit rate                         : 6 553 kb/s
+
+        Video
+        ID                                       : 1
+        Format profile                           : High@L4.2
+
+        Audio #1
+        Channel(s)                               : 2 channels
+
+        Menu
+        00:00:00.000                             : en:Chapter 1
+
+        """
+        let r = MediaInfoReport.parse(text)
+        #expect(r.sections.map(\.title) == ["General", "Video", "Audio #1", "Menu"])
+        #expect(r.sections[0].value("Overall bit rate") == "6 553 kb/s")
+        #expect(r.sections[1].value("Format profile") == "High@L4.2")
+        #expect(r.sections[3].fields == [.init(name: "00:00:00.000", value: "en:Chapter 1")])
+    }
+
+    @Test func tmdbParsing() throws {
+        let search = #"{"results":[{"id":1,"name":"Doctor Who","first_air_date":"2005-03-26","overview":"x","poster_path":"/a.jpg"},{"id":2,"name":"No Date"}]}"#
+        let results = try TMDBClient.parseSearch(Data(search.utf8), type: .tv)
+        #expect(results.map(\.title) == ["Doctor Who", "No Date"])
+        #expect(results[0].year == "2005" && results[1].year == nil && results[1].posterPath == nil)
+
+        let images = #"{"posters":[{"file_path":"/fr.jpg","width":1000,"height":1500,"iso_639_1":"fr","vote_average":9},{"file_path":"/none.jpg","width":1000,"height":1500,"iso_639_1":null,"vote_average":8},{"file_path":"/en-low.jpg","width":500,"height":750,"iso_639_1":"en","vote_average":2},{"file_path":"/en-high.jpg","width":2000,"height":3000,"iso_639_1":"en","vote_average":5}]}"#
+        let posters = try TMDBClient.parsePosters(Data(images.utf8), preferring: "en")
+        #expect(posters.map(\.filePath) == ["/en-high.jpg", "/en-low.jpg", "/none.jpg", "/fr.jpg"])
+        #expect(TMDBClient.imageURL("/a.jpg").absoluteString == "https://image.tmdb.org/t/p/w342/a.jpg")
+    }
+
     @Test func selectionRules() throws {
         let json = """
         {"streams":[{"index":0,"codec_type":"video","codec_name":"h264"},
@@ -66,6 +103,69 @@ struct UnitTests {
         #expect(rules.selectedTrackIDs(in: file) == ["0:0", "0:2"])
         rules.subtitleFallbackToFirst = true
         #expect(rules.selectedTrackIDs(in: file) == ["0:0", "0:2", "0:3"])
+    }
+
+    @Test func unlabeledTracksGetTheRulesLanguage() throws {
+        let json = """
+        {"streams":[{"index":0,"codec_type":"video","codec_name":"h264"},
+         {"index":1,"codec_type":"audio","codec_name":"eac3","tags":{"language":"und"}},
+         {"index":2,"codec_type":"audio","codec_name":"aac","tags":{"language":"fre"}},
+         {"index":3,"codec_type":"subtitle","codec_name":"mov_text"}],
+         "format":{"duration":"10"}}
+        """
+        let file = try MediaFile.parse(ffprobeJSON: Data(json.utf8), url: URL(fileURLWithPath: "/x/a.ts"))
+        var rules = SelectionRules()
+        #expect(rules.labeling(file).tracks.map(\.language) == ["und", "eng", "fre", "eng"])
+        rules.unlabeledLanguage = "und"
+        #expect(rules.labeling(file).tracks.map(\.language) == ["und", "und", "fre", "und"])
+    }
+
+    @Test func appleTVDefaultsConvertTrueHDToEAC3() throws {
+        let json = """
+        {"streams":[{"index":0,"codec_type":"video","codec_name":"hevc","width":3840},
+         {"index":1,"codec_type":"audio","codec_name":"truehd","channels":8},
+         {"index":2,"codec_type":"audio","codec_name":"ac3","channels":6},
+         {"index":3,"codec_type":"audio","codec_name":"dts","channels":6}],
+         "format":{"duration":"10"}}
+        """
+        let file = try MediaFile.parse(ffprobeJSON: Data(json.utf8), url: URL(fileURLWithPath: "/x/a.mkv"))
+        let tools = ToolPaths(overrides: ["ffmpeg": "/bin/sh", "AtomicParsley": "/bin/sh"])
+        let plan = try ConvertBuilder(tools: tools, capabilities: .full).plan(ConvertRequest(
+            main: file, selectedTrackIDs: Set(file.tracks.map(\.id)), settings: ConvertSettings(),
+            outputURL: URL(fileURLWithPath: "/tmp/o.m4v"), temporaryDirectory: URL(fileURLWithPath: "/tmp")))
+        let args = plan.steps[0].arguments.joined(separator: " ")
+        // Each surround track gets an AAC stereo version first: outputs 1-2 TrueHD, 3-4 AC3, 5-6 DTS.
+        #expect(args.contains("-c:2 eac3 -b:2 640k -ac:2 6"))
+        #expect(args.contains("-c:4 copy"))
+        #expect(args.contains("-c:6 eac3 -b:6 640k"))
+        #expect(args.contains("-c:1 aac_at -b:1 192k -ac:1 2"))
+        #expect(Preset.builtIn[0].settings == ConvertSettings())
+    }
+
+    @Test func handBrakeAppleTV4KVideo() throws {
+        let json = """
+        {"streams":[{"index":0,"codec_type":"video","codec_name":"h264","width":4096,"height":2160,"pix_fmt":"yuv420p","avg_frame_rate":"120/1"},
+         {"index":1,"codec_type":"audio","codec_name":"aac","channels":2}],
+         "format":{"duration":"10"}}
+        """
+        let file = try MediaFile.parse(ffprobeJSON: Data(json.utf8), url: URL(fileURLWithPath: "/x/a.mkv"))
+        let tools = ToolPaths(overrides: ["ffmpeg": "/bin/sh", "AtomicParsley": "/bin/sh"])
+        var s = ConvertSettings()
+        s.videoCodec = .handBrakeAppleTV4K
+        s.device = .any
+        let plan = try ConvertBuilder(tools: tools, capabilities: .full).plan(ConvertRequest(
+            main: file, selectedTrackIDs: Set(file.tracks.map(\.id)), settings: s,
+            outputURL: URL(fileURLWithPath: "/tmp/o.m4v"), temporaryDirectory: URL(fileURLWithPath: "/tmp")))
+        let args = plan.steps[0].arguments
+        let graph = args[args.firstIndex(of: "-filter_complex")! + 1]
+        #expect(graph == "[0:0]bwdif=mode=send_frame:deint=interlaced,fps=60,scale='min(3840,iw)':'min(2160,ih)':force_original_aspect_ratio=decrease:force_divisible_by=2,format=yuv420p10le[v0]")
+        let joined = args.joined(separator: " ")
+        #expect(plan.steps.count == 1)
+        #expect(joined.contains("-c:0 libx265 -preset:0 slow -crf:0 24 -profile:0 main10 -tag:0 hvc1 -x265-params:0 strong-intra-smoothing=0:rect=0:aq-mode=1:rd=4:psy-rd=0.75:psy-rdoq=4.0:rdoq-level=1:rskip=2:log-level=error"))
+        // A stereo AAC track is copied as is, with no AC3 or E-AC3 track added.
+        #expect(joined.contains("-map 0:1 -c:1 copy"))
+        #expect(!joined.contains("ac3"))
+        #expect(args.filter { $0 == "-map" }.count == 2)
     }
 
     @Test func builderRejectsBadRequests() throws {

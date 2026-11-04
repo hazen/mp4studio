@@ -13,5 +13,5 @@ cp -R build/MP4Studio.app "$STAGE/"
 ln -s /Applications "$STAGE/Applications"
 
 rm -f "$DMG"
-hdiutil create -volname "MP4Studio" -srcfolder "$STAGE" -fs HFS+ -format UDZO -ov "$DMG" >/dev/null
+diskutil image create from --format UDZO --volumeName "MP4Studio" "$STAGE" "$DMG" >/dev/null
 echo "Created $DMG ($(du -h "$DMG" | cut -f1))"

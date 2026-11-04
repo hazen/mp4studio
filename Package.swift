@@ -10,6 +10,11 @@ let package = Package(
             swiftSettings: [.swiftLanguageMode(.v5)]
         ),
         .executableTarget(
+            name: "mp4studio-ocr",
+            dependencies: ["MP4StudioCore"],
+            swiftSettings: [.swiftLanguageMode(.v5)]
+        ),
+        .executableTarget(
             name: "MP4Studio",
             dependencies: ["MP4StudioCore"],
             swiftSettings: [.swiftLanguageMode(.v5)]

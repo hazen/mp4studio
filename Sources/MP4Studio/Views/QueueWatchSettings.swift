@@ -208,6 +208,17 @@ private struct GeneralSettings: View {
             LabeledContent("Logs") {
                 Button("Show in Finder") { NSWorkspace.shared.open(app.logsDirectory) }
             }
+            Section {
+                SecureField("TMDB API key", text: $app.tmdbKey, prompt: Text("API key or read access token"))
+            } header: {
+                Text("Artwork search")
+            } footer: {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Find Online in the Artwork section searches The Movie Database. Create a free key at [themoviedb.org/settings/api](https://www.themoviedb.org/settings/api). It's stored in your keychain.")
+                    Text("This product uses the TMDB API but is not endorsed or certified by TMDB.")
+                }
+                .font(.caption).foregroundStyle(.secondary)
+            }
         }
         .formStyle(.grouped)
     }
@@ -224,7 +235,7 @@ private struct ToolSettings: View {
                     ToolRow(tool: tool, architecture: architectures[tool])
                 }
             } footer: {
-                Text("Leave a path blank to use the Homebrew install (/opt/homebrew/bin). Install everything with: brew install ffmpeg mkvtoolnix gpac atomicparsley")
+                Text("Leave a path blank to use the Homebrew install (/opt/homebrew/bin). Install everything with: brew install ffmpeg mkvtoolnix gpac atomicparsley media-info, or brew bundle in the source folder.")
                     .font(.caption).foregroundStyle(.secondary).textSelection(.enabled)
             }
             if !app.capabilities.encoders.isEmpty {

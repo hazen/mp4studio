@@ -108,11 +108,22 @@ public struct ConvertBuilder {
                         if let start { filters += ["setpts=PTS+\(seconds(start))/TB", sub, "setpts=PTS-STARTPTS"] } else { filters.append(sub) }
                     }
                 }
-                if s.squarePixels && v.isAnamorphic {
-                    filters.append("scale=trunc(iw*sar/2)*2:ih")
+                if s.videoCodec == .handBrakeAppleTV4K {
+                    // HandBrake's decomb and 60 fps peak frame rate.
+                    filters.append("bwdif=mode=send_frame:deint=interlaced")
+                    if (v.frameRate ?? 0) > 60.5 { filters.append("fps=60") }
                 }
-                if let maxW = s.effectiveMaxWidth, (v.width ?? .max) > maxW || (s.squarePixels && v.isAnamorphic) {
-                    filters.append("scale='min(\(maxW),iw)':-2")
+                if s.squarePixels && v.isAnamorphic {
+                    // Shrink whichever dimension is too long, so the output is never larger than the source.
+                    filters.append("scale='if(gt(sar,1),iw,trunc(iw*sar/2)*2)':'if(gt(sar,1),trunc(ih/sar/2)*2,ih)'")
+                }
+                let tooTall = s.videoCodec.maxHeight.map { (v.height ?? 0) > $0 } ?? false
+                if let maxW = s.effectiveMaxWidth, (v.width ?? .max) > maxW || (s.squarePixels && v.isAnamorphic) || tooTall {
+                    if let maxH = s.videoCodec.maxHeight {
+                        filters.append("scale='min(\(maxW),iw)':'min(\(maxH),ih)':force_original_aspect_ratio=decrease:force_divisible_by=2")
+                    } else {
+                        filters.append("scale='min(\(maxW),iw)':-2")
+                    }
                 }
                 if s.squarePixels && v.isAnamorphic { filters.append("setsar=1") }
                 filters.append("format=\(pixelFormat(for: v, codec: s.videoCodec))")
@@ -181,7 +192,9 @@ public struct ConvertBuilder {
                 case .ac3:
                     emitAudio(a, a.codec == "ac3" ? copy : dolby("ac3", s.surroundBitrateKbps, channels: a.channels), title: surroundTitle)
                 case .eac3:
-                    emitAudio(a, a.codec == "eac3" ? copy : dolby("eac3", s.surroundBitrateKbps, channels: a.channels), title: surroundTitle)
+                    // AC3 plays everywhere E-AC3 does, so only TrueHD, DTS and the like are converted.
+                    let dolbyAlready = a.codec == "eac3" || a.codec == "ac3"
+                    emitAudio(a, dolbyAlready ? copy : dolby("eac3", s.surroundBitrateKbps, channels: a.channels), title: surroundTitle)
                 case .aacStereo:
                     break
                 }
@@ -242,13 +255,13 @@ public struct ConvertBuilder {
         var steps: [JobStep] = []
         var temporaryFiles: [URL] = []
         let name = request.main.name
-        if s.videoCodec == .x264TwoPass && !videos.isEmpty {
+        if s.videoCodec.isTwoPass && !videos.isEmpty {
             steps.append(JobStep(label: "Pass 1 of 2 (analysis)", tool: .ffmpeg, executable: ffmpeg,
                                  arguments: base + videoSection(pass: 1) + ["-an", "-sn", "-dn", "-f", "null", "/dev/null"],
                                  progress: .ffmpeg(totalSeconds: total)))
             temporaryFiles += [passLog + "-0.log", passLog + "-0.log.mbtree"].map { URL(fileURLWithPath: $0) }
         }
-        let pass = s.videoCodec == .x264TwoPass ? 2 : 0
+        let pass = s.videoCodec.isTwoPass ? 2 : 0
         steps.append(JobStep(label: pass == 2 ? "Pass 2 of 2 (encode)" : "Converting",
                              tool: .ffmpeg, executable: ffmpeg,
                              arguments: base + videoSection(pass: pass) + audioArgs + subtitleArgs + tail + [request.outputURL.path],
@@ -280,6 +293,11 @@ public struct ConvertBuilder {
         case .x265:
             a = ["-c:\(o)", "libx265", "-preset:\(o)", s.encoderPreset, "-crf:\(o)", "\(s.crf)", "-tag:\(o)", "hvc1",
                  "-x265-params:\(o)", "log-level=error"]
+        case .handBrakeAppleTV4K:
+            // Video settings of HandBrake's "Apple 2160p60 4K HEVC Surround" preset.
+            a = ["-c:\(o)", "libx265", "-preset:\(o)", "slow", "-crf:\(o)", "24", "-profile:\(o)", "main10", "-tag:\(o)", "hvc1",
+                 "-x265-params:\(o)", Self.handBrakeX265Params + ":log-level=error"]
+            return a
         case .h264Hardware:
             a = ["-c:\(o)", "h264_videotoolbox", "-q:\(o)", "\(s.hardwareQuality)"]
         case .hevcHardware:
@@ -293,8 +311,11 @@ public struct ConvertBuilder {
         return a
     }
 
+    static let handBrakeX265Params = "strong-intra-smoothing=0:rect=0:aq-mode=1:rd=4:psy-rd=0.75:psy-rdoq=4.0:rdoq-level=1:rskip=2"
+
     func pixelFormat(for v: MediaTrack, codec: VideoCodecChoice) -> String {
         switch codec {
+        case .handBrakeAppleTV4K: return "yuv420p10le"
         case .x265: return v.isTenBit ? "yuv420p10le" : "yuv420p"
         case .hevcHardware: return v.isTenBit ? "p010le" : "nv12"
         case .h264Hardware: return "nv12"

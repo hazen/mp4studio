@@ -15,7 +15,7 @@ public enum OutputContainer: String, Codable, Sendable, CaseIterable, Identifiab
 }
 
 public enum VideoCodecChoice: String, Codable, Sendable, CaseIterable, Identifiable {
-    case passthrough, x264, x264TwoPass, x265, h264Hardware, hevcHardware
+    case passthrough, x264, x264TwoPass, x265, handBrakeAppleTV4K, h264Hardware, hevcHardware
     public var id: String { rawValue }
 
     public var label: String {
@@ -24,6 +24,7 @@ public enum VideoCodecChoice: String, Codable, Sendable, CaseIterable, Identifia
         case .x264: return "H.264 – x264, constant quality"
         case .x264TwoPass: return "H.264 – x264, 2-pass bitrate"
         case .x265: return "HEVC – x265, constant quality"
+        case .handBrakeAppleTV4K: return "HEVC – x265 10-bit, HandBrake Apple TV 4K"
         case .h264Hardware: return "H.264 – Apple hardware (fast)"
         case .hevcHardware: return "HEVC – Apple hardware (fast)"
         }
@@ -33,13 +34,17 @@ public enum VideoCodecChoice: String, Codable, Sendable, CaseIterable, Identifia
     public var usesCRF: Bool { self == .x264 || self == .x265 }
     public var usesHardwareQuality: Bool { self == .h264Hardware || self == .hevcHardware }
     public var usesBitrate: Bool { self == .x264TwoPass }
+    public var isTwoPass: Bool { self == .x264TwoPass }
     public var usesEncoderPreset: Bool { self == .x264 || self == .x264TwoPass || self == .x265 }
-    public var isHEVC: Bool { self == .x265 || self == .hevcHardware }
+    public var isHEVC: Bool { self == .x265 || self == .handBrakeAppleTV4K || self == .hevcHardware }
+    /// Resolution cap built into the codec choice (HandBrake's preset fits video within 3840x2160).
+    public var maxWidth: Int? { self == .handBrakeAppleTV4K ? 3840 : nil }
+    public var maxHeight: Int? { self == .handBrakeAppleTV4K ? 2160 : nil }
     public var encoderName: String? {
         switch self {
         case .passthrough: return nil
         case .x264, .x264TwoPass: return "libx264"
-        case .x265: return "libx265"
+        case .x265, .handBrakeAppleTV4K: return "libx265"
         case .h264Hardware: return "h264_videotoolbox"
         case .hevcHardware: return "hevc_videotoolbox"
         }
@@ -101,7 +106,7 @@ public enum SurroundAction: String, Codable, Sendable, CaseIterable, Identifiabl
         switch self {
         case .passthrough: return "Pass through"
         case .ac3: return "AC3 (Dolby Digital)"
-        case .eac3: return "E-AC3 (Dolby Digital Plus)"
+        case .eac3: return "E-AC3 (Dolby Digital Plus), keep AC3"
         case .aacStereo: return "AAC stereo only"
         }
     }
@@ -114,8 +119,9 @@ public enum SubtitleAction: String, Codable, Sendable, CaseIterable, Identifiabl
 }
 
 public struct ConvertSettings: Codable, Equatable, Sendable {
+    // Defaults target Apple TV: M4V, Apple TV 4K limits, and surround that it can play.
     public var container: OutputContainer = .m4v
-    public var device: DeviceTarget = .any
+    public var device: DeviceTarget = .appleTV4K
 
     public var videoCodec: VideoCodecChoice = .passthrough
     public var crf: Int = 20
@@ -127,10 +133,10 @@ public struct ConvertSettings: Codable, Equatable, Sendable {
     public var squarePixels: Bool = false
 
     public var stereoAction: StereoAction = .passthrough
-    public var surroundAction: SurroundAction = .passthrough
+    public var surroundAction: SurroundAction = .eac3
     public var addStereoVersion: Bool = true
-    public var stereoBitrateKbps: Int = 160
-    public var surroundBitrateKbps: Int = 448
+    public var stereoBitrateKbps: Int = 192
+    public var surroundBitrateKbps: Int = 640
 
     public var subtitleAction: SubtitleAction = .soft
 
@@ -146,7 +152,7 @@ public struct ConvertSettings: Codable, Equatable, Sendable {
 
     /// The tighter of the user's width cap and the device's.
     public var effectiveMaxWidth: Int? {
-        let caps = [maxWidth > 0 ? maxWidth : nil, device.maxWidth].compactMap { $0 }
+        let caps = [maxWidth > 0 ? maxWidth : nil, device.maxWidth, videoCodec.maxWidth].compactMap { $0 }
         return caps.min()
     }
 
@@ -201,8 +207,21 @@ public struct SelectionRules: Codable, Equatable, Sendable {
     public var subtitleFallbackToFirst: Bool = false
     /// Burn the first forced subtitle track into the video (needs a re-encoding video codec).
     public var burnForcedSubtitles: Bool = false
+    /// Given to audio and subtitle tracks the source leaves undetermined, since Apple TV shows those as "Unknown". "und" leaves them.
+    public var unlabeledLanguage: String = "eng"
 
     public init() {}
+
+    /// The file with undetermined audio and subtitle tracks set to `unlabeledLanguage`.
+    public func labeling(_ file: MediaFile) -> MediaFile {
+        let language = Languages.normalize(unlabeledLanguage)
+        guard language != "und" else { return file }
+        var file = file
+        for i in file.tracks.indices where file.tracks[i].language == "und" && (file.tracks[i].kind == .audio || file.tracks[i].kind == .subtitle) {
+            file.tracks[i].language = language
+        }
+        return file
+    }
 
     public func selectedTrackIDs(in file: MediaFile) -> Set<String> {
         var ids = Set(file.tracks(.video).prefix(1).map(\.id))
@@ -233,6 +252,7 @@ public struct SelectionRules: Codable, Equatable, Sendable {
         subtitleLanguages = (try? c.decode([String].self, forKey: .subtitleLanguages)) ?? d.subtitleLanguages
         subtitleFallbackToFirst = (try? c.decode(Bool.self, forKey: .subtitleFallbackToFirst)) ?? d.subtitleFallbackToFirst
         burnForcedSubtitles = (try? c.decode(Bool.self, forKey: .burnForcedSubtitles)) ?? d.burnForcedSubtitles
+        unlabeledLanguage = (try? c.decode(String.self, forKey: .unlabeledLanguage)) ?? d.unlabeledLanguage
     }
 }
 
@@ -249,17 +269,19 @@ public struct Preset: Codable, Identifiable, Equatable, Sendable {
         self.rules = rules
     }
 
+    /// The first one is the default for new installs.
     public static var builtIn: [Preset] {
-        var appleTV = ConvertSettings()
-        appleTV.container = .m4v
-        appleTV.device = .appleTVHD
+        let appleTV = ConvertSettings()
 
         var hevc = ConvertSettings()
-        hevc.container = .m4v
-        hevc.device = .appleTV4K
         hevc.videoCodec = .hevcHardware
-        hevc.surroundAction = .eac3
-        hevc.surroundBitrateKbps = 640
+
+        var handBrake = ConvertSettings()
+        handBrake.videoCodec = .handBrakeAppleTV4K
+
+        var keepAudio = ConvertSettings()
+        keepAudio.surroundAction = .passthrough
+        keepAudio.surroundBitrateKbps = 448
 
         var universal = ConvertSettings()
         universal.container = .mp4
@@ -272,10 +294,14 @@ public struct Preset: Codable, Identifiable, Equatable, Sendable {
 
         var mkv = ConvertSettings()
         mkv.container = .mkv
+        mkv.device = .any
+        mkv.surroundAction = .passthrough
 
         return [
-            Preset(name: "Apple TV – remux, keep quality", settings: appleTV),
+            Preset(name: "Apple TV – remux, E-AC3 surround", settings: appleTV),
             Preset(name: "Apple TV 4K – HEVC hardware", settings: hevc),
+            Preset(name: "Apple TV 4K – HandBrake HEVC (x265)", settings: handBrake),
+            Preset(name: "Remux – keep original surround", settings: keepAudio),
             Preset(name: "Universal H.264 (stereo)", settings: universal),
             Preset(name: "MKV remux", settings: mkv),
         ]
