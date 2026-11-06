@@ -1,11 +1,13 @@
 #!/bin/zsh
-# Builds the app and packages it as build/MP4Studio-<version>.dmg with an Applications shortcut.
+# Builds the app and packages it as build/MP4Studio-<version>-<build>.dmg with an Applications shortcut.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
 scripts/build-app.sh
-VERSION=$(/usr/libexec/PlistBuddy -c "Print :CFBundleShortVersionString" Resources/Info.plist)
-DMG="build/MP4Studio-$VERSION.dmg"
+PLIST=build/MP4Studio.app/Contents/Info.plist
+VERSION=$(/usr/libexec/PlistBuddy -c "Print :CFBundleShortVersionString" "$PLIST")
+BUILD=$(/usr/libexec/PlistBuddy -c "Print :CFBundleVersion" "$PLIST")
+DMG="build/MP4Studio-$VERSION-$BUILD.dmg"
 
 STAGE=$(mktemp -d)
 trap 'rm -rf "$STAGE"' EXIT

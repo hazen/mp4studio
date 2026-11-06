@@ -18,6 +18,8 @@ mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
 cp "$BIN" "$APP/Contents/MacOS/MP4Studio"
 cp "$BIN_DIR/mp4studio-ocr" "$APP/Contents/MacOS/mp4studio-ocr"
 cp Resources/Info.plist "$APP/Contents/Info.plist"
+# The build number is the build time, e.g. 202611061234.
+/usr/libexec/PlistBuddy -c "Set :CFBundleVersion $(date +%Y%m%d%H%M)" "$APP/Contents/Info.plist"
 
 # A local Resources/AppIcon.icns (not in git) wins; otherwise generate the default icon.
 if [[ -f Resources/AppIcon.icns ]]; then
@@ -33,7 +35,7 @@ fi
 
 codesign --force --sign - --timestamp=none "$APP/Contents/MacOS/mp4studio-ocr"
 codesign --force --sign - --timestamp=none "$APP"
-echo "Built $APP ($(lipo -archs "$APP/Contents/MacOS/MP4Studio"))"
+echo "Built $APP $(/usr/libexec/PlistBuddy -c "Print :CFBundleVersion" "$APP/Contents/Info.plist") ($(lipo -archs "$APP/Contents/MacOS/MP4Studio"))"
 
 if [[ "${1:-}" == "--install" ]]; then
   rm -rf /Applications/MP4Studio.app

@@ -30,7 +30,7 @@ MP4Studio finds the tools in `/opt/homebrew/bin` automatically. You can point it
 ### From a DMG
 
 1. Install the Homebrew tools above.
-2. Open `MP4Studio-<version>.dmg` and drag **MP4Studio** onto **Applications**.
+2. Open `MP4Studio-<version>-<build>.dmg` and drag **MP4Studio** onto **Applications**.
 3. The app is ad-hoc signed, not notarized, so the first launch on a new Mac is blocked. Open it once, then go to **System Settings ▸ Privacy & Security** and click **Open Anyway**. Or, in Terminal:
 
    ```sh
@@ -46,7 +46,7 @@ git clone https://github.com/hazen/mp4studio.git
 cd mp4studio
 brew bundle                      # installs the tools listed in the Brewfile
 scripts/build-app.sh --install   # builds build/MP4Studio.app and copies it to /Applications
-scripts/make-dmg.sh              # or: builds build/MP4Studio-<version>.dmg
+scripts/make-dmg.sh              # or: builds build/MP4Studio-<version>-<build>.dmg
 ```
 
 The scripts build against the Command Line Tools' macOS 26.5 SDK when it's present. The macOS 27 SDK needs Xcode's SwiftUI macro plugin, which only works once the Xcode license has been accepted (`sudo xcodebuild -license`).
