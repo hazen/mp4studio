@@ -168,6 +168,38 @@ struct UnitTests {
         #expect(args.filter { $0 == "-map" }.count == 2)
     }
 
+    @Test func convertPlanDescribesTheEncode() throws {
+        let json = """
+        {"streams":[{"index":0,"codec_type":"video","codec_name":"hevc","width":3840,"height":2160,"pix_fmt":"yuv420p10le"},
+         {"index":1,"codec_type":"audio","codec_name":"truehd","channels":8,"tags":{"language":"eng"}},
+         {"index":2,"codec_type":"subtitle","codec_name":"hdmv_pgs_subtitle"}],
+         "format":{"duration":"10"}}
+        """
+        let file = try MediaFile.parse(ffprobeJSON: Data(json.utf8), url: URL(fileURLWithPath: "/x/a.mkv"))
+        let tools = ToolPaths(overrides: ["ffmpeg": "/bin/sh", "AtomicParsley": "/bin/sh"])
+        var s = ConvertSettings()
+        s.videoCodec = .hevcHardware
+        s.maxWidth = 1920
+        s.addStereoVersion = true
+        let plan = try ConvertBuilder(tools: tools, capabilities: .full).plan(ConvertRequest(
+            main: file, selectedTrackIDs: Set(file.tracks.map(\.id)), settings: s,
+            outputURL: URL(fileURLWithPath: "/tmp/o.m4v"), temporaryDirectory: URL(fileURLWithPath: "/tmp")))
+        #expect(plan.details.map(\.title) == ["Source", "Video", "Audio", "Subtitles", "Container"])
+        func value(_ section: String, _ label: String) -> String? {
+            plan.details.first { $0.title == section }?.rows.first { $0.label == label }?.value
+        }
+        #expect(value("Video", "Encoder") == "hevc_videotoolbox")
+        #expect(value("Video", "Quality") == "VideoToolbox quality 65 of 100")
+        #expect(value("Video", "Profile") == "main10")
+        #expect(value("Video", "Output size") == "3840×2160 → 1920×1080")
+        #expect(value("Video", "Filters") == "Scale to at most 1920 wide")
+        #expect(plan.details[2].rows.map(\.value) == ["TrueHD · 8 ch · eng → AAC stereo, 192 kbps (aac_at) · “Stereo” · default",
+                                                       "TrueHD · 8 ch · eng → E-AC3, 640 kbps, downmixed to 5.1 · “Surround”"])
+        #expect(value("Subtitles", "Track 0:2") == "PGS → Skipped, can't be stored in MP4")
+        #expect(value("Container", "HD flag") == "1080p")
+        #expect(plan.detailsText.contains("  Encoder: hevc_videotoolbox"))
+    }
+
     @Test func builderRejectsBadRequests() throws {
         let json = #"{"streams":[{"index":0,"codec_type":"video","codec_name":"h264","width":1920},{"index":1,"codec_type":"subtitle","codec_name":"subrip"}],"format":{"duration":"10"}}"#
         let file = try MediaFile.parse(ffprobeJSON: Data(json.utf8), url: URL(fileURLWithPath: "/x/a.mkv"))

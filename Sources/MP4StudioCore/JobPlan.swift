@@ -30,6 +30,27 @@ public struct JobStep: Sendable, Equatable {
     public var commandLine: String { shellQuoted([executable.path] + arguments) }
 }
 
+/// A human-readable account of part of a job, such as how its video is encoded.
+public struct PlanSection: Sendable, Equatable {
+    public struct Row: Sendable, Equatable {
+        public var label: String
+        public var value: String
+
+        public init(_ label: String, _ value: String) {
+            self.label = label
+            self.value = value
+        }
+    }
+
+    public var title: String
+    public var rows: [Row]
+
+    public init(_ title: String, _ rows: [Row]) {
+        self.title = title
+        self.rows = rows
+    }
+}
+
 public struct JobPlan: Sendable {
     public var title: String
     public var steps: [JobStep]
@@ -40,14 +61,25 @@ public struct JobPlan: Sendable {
     /// Temporary files to delete when the job ends.
     public var temporaryFiles: [URL]
     public var warnings: [String]
+    /// What the job does, for the queue's details view and the log.
+    public var details: [PlanSection]
 
-    public init(title: String, steps: [JobStep], outputs: [URL], outputFolder: URL, temporaryFiles: [URL] = [], warnings: [String] = []) {
+    public init(title: String, steps: [JobStep], outputs: [URL], outputFolder: URL, temporaryFiles: [URL] = [], warnings: [String] = [],
+                details: [PlanSection] = []) {
         self.title = title
         self.steps = steps
         self.outputs = outputs
         self.outputFolder = outputFolder
         self.temporaryFiles = temporaryFiles
         self.warnings = warnings
+        self.details = details
+    }
+
+    /// The details as plain text, one "Label: value" line per row.
+    public var detailsText: String {
+        details.map { section in
+            ([section.title] + section.rows.map { "  \($0.label): \($0.value)" }).joined(separator: "\n")
+        }.joined(separator: "\n")
     }
 }
 

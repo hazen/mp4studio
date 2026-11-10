@@ -91,13 +91,23 @@ public struct ConvertBuilder {
         var out = 0
         let passLog = request.temporaryDirectory.appendingPathComponent("passlog-\(UUID().uuidString)").path
         var videoCodecArgsByPass: [(Int) -> [String]] = []
+        var details: [PlanSection] = []
+        var sourceRows = [PlanSection.Row("File", request.main.name), PlanSection.Row("Duration", TimeCode.format(total))]
+        if start != nil || end != nil {
+            sourceRows.append(.init("Segment", "\(TimeCode.format(start ?? 0)) to \(end.map { TimeCode.format($0) } ?? "end")"))
+        }
+        if !request.extras.isEmpty { sourceRows.append(.init("Added files", request.extras.map(\.name).joined(separator: ", "))) }
+        details.append(PlanSection("Source", sourceRows))
 
         for (vi, v) in videos.enumerated() {
             let o = out
+            var rows = [PlanSection.Row("Track \(v.id)", Self.summary(of: v))]
             if s.videoCodec.reencodes {
                 var filters: [String] = []
+                var notes: [String] = []
                 var source = "[\(v.id)]"
                 if let burn, vi == 0 {
+                    notes.append("Burn in \(burn.codecLabel) subtitles from track \(burn.id)")
                     if burn.isBitmapSubtitle {
                         source = "[\(v.id)][\(burn.id)]overlay=eof_action=pass"
                     } else {
@@ -111,9 +121,14 @@ public struct ConvertBuilder {
                 if s.videoCodec == .handBrakeAppleTV4K {
                     // HandBrake's decomb and 60 fps peak frame rate.
                     filters.append("bwdif=mode=send_frame:deint=interlaced")
-                    if (v.frameRate ?? 0) > 60.5 { filters.append("fps=60") }
+                    notes.append("Deinterlace interlaced frames (bwdif)")
+                    if (v.frameRate ?? 0) > 60.5 {
+                        filters.append("fps=60")
+                        notes.append("Limit to 60 fps")
+                    }
                 }
                 if s.squarePixels && v.isAnamorphic {
+                    notes.append("Convert to square pixels")
                     // Shrink whichever dimension is too long, so the output is never larger than the source.
                     filters.append("scale='if(gt(sar,1),iw,trunc(iw*sar/2)*2)':'if(gt(sar,1),trunc(ih/sar/2)*2,ih)'")
                 }
@@ -121,8 +136,10 @@ public struct ConvertBuilder {
                 if let maxW = s.effectiveMaxWidth, (v.width ?? .max) > maxW || (s.squarePixels && v.isAnamorphic) || tooTall {
                     if let maxH = s.videoCodec.maxHeight {
                         filters.append("scale='min(\(maxW),iw)':'min(\(maxH),ih)':force_original_aspect_ratio=decrease:force_divisible_by=2")
+                        notes.append("Fit within \(maxW)×\(maxH)")
                     } else {
                         filters.append("scale='min(\(maxW),iw)':-2")
+                        notes.append("Scale to at most \(maxW) wide")
                     }
                 }
                 if s.squarePixels && v.isAnamorphic { filters.append("setsar=1") }
@@ -132,13 +149,22 @@ public struct ConvertBuilder {
                 graph.append("\(source)\(separator)\(joinedFilters)[v\(vi)]")
                 videoArgs += ["-map", "[v\(vi)]"]
                 videoCodecArgsByPass.append { pass in self.videoCodecArgs(o, v, s, pass: pass, passLog: passLog) }
+                rows += videoEncodeRows(o, v, s)
+                if let size = outputSize(of: v, settings: s) { rows.append(.init("Output size", size)) }
+                rows.append(.init("Pixel format", pixelFormat(for: v, codec: s.videoCodec)))
+                rows.append(.init("Filters", notes.isEmpty ? "None" : notes.joined(separator: ", ")))
             } else {
+                rows.append(.init("Codec", "Copy (no re-encode)"))
                 videoArgs += ["-map", v.id, "-c:\(o)", "copy"]
                 if s.container.isMP4 && !Self.mp4VideoCodecs.contains(v.codec) {
                     throw ToolError.invalid("\(v.codecLabel) video can't be passed through into MP4. Choose MKV or re-encode the video.")
                 }
-                if s.container.isMP4 && v.codec == "hevc" { videoArgs += ["-tag:\(o)", "hvc1"] }
+                if s.container.isMP4 && v.codec == "hevc" {
+                    videoArgs += ["-tag:\(o)", "hvc1"]
+                    rows.append(.init("Tag", "hvc1, so Apple players accept it"))
+                }
                 if s.squarePixels && v.isAnamorphic {
+                    if v.codec == "h264" || v.codec == "hevc" { rows.append(.init("Pixel aspect", "Marked 1:1 without re-encoding")) }
                     if v.codec == "h264" { videoArgs += ["-bsf:\(o)", "h264_metadata=sample_aspect_ratio=1/1"] }
                     else if v.codec == "hevc" { videoArgs += ["-bsf:\(o)", "hevc_metadata=sample_aspect_ratio=1/1"] }
                     else { warnings.append("Square pixels needs re-encoding for \(v.codecLabel) video; the pixel aspect ratio was kept.") }
@@ -146,6 +172,7 @@ public struct ConvertBuilder {
                 videoCodecArgsByPass.append { _ in [] }
             }
             videoArgs += trackMetadata(o, language: v.language, title: v.title, isMP4: s.container.isMP4)
+            details.append(PlanSection(videos.count > 1 ? "Video \(vi + 1)" : "Video", rows))
             out += 1
         }
 
@@ -158,20 +185,32 @@ public struct ConvertBuilder {
 
         // Audio
         var audioArgs: [String] = []
+        var audioRows: [PlanSection.Row] = []
         var firstAudio = true
-        func emitAudio(_ a: MediaTrack, _ codec: [String], title: String) {
-            audioArgs += ["-map", a.id] + codec.map { $0.replacingOccurrences(of: "{o}", with: "\(out)") }
+        func emitAudio(_ a: MediaTrack, _ codec: (args: [String], summary: String), title: String) {
+            audioArgs += ["-map", a.id] + codec.args.map { $0.replacingOccurrences(of: "{o}", with: "\(out)") }
             audioArgs += trackMetadata(out, language: a.language, title: title, isMP4: s.container.isMP4)
             audioArgs += ["-disposition:\(out)", firstAudio ? "default" : "0"]
+            var result = [codec.summary]
+            if !title.isEmpty { result.append("“\(title)”") }
+            if firstAudio { result.append("default") }
+            audioRows.append(.init("Track \(a.id)", "\(Self.summary(of: a)) → \(result.joined(separator: " · "))"))
             firstAudio = false
             out += 1
         }
-        let copy = ["-c:{o}", "copy"]
-        func aac(_ kbps: Int) -> [String] { ["-c:{o}", capabilities.aacEncoder, "-b:{o}", "\(kbps)k", "-ac:{o}", "2"] }
-        func dolby(_ codec: String, _ kbps: Int, channels: Int?) -> [String] {
-            var a = ["-c:{o}", codec, "-b:{o}", "\(codec == "ac3" ? min(kbps, 640) : kbps)k"]
-            if (channels ?? 0) > 6 { a += ["-ac:{o}", "6"] }
-            return a
+        let copy = (args: ["-c:{o}", "copy"], summary: "Copy")
+        func aac(_ kbps: Int) -> (args: [String], summary: String) {
+            (["-c:{o}", capabilities.aacEncoder, "-b:{o}", "\(kbps)k", "-ac:{o}", "2"], "AAC stereo, \(kbps) kbps (\(capabilities.aacEncoder))")
+        }
+        func dolby(_ codec: String, _ kbps: Int, channels: Int?) -> (args: [String], summary: String) {
+            let rate = codec == "ac3" ? min(kbps, 640) : kbps
+            var a = ["-c:{o}", codec, "-b:{o}", "\(rate)k"]
+            var summary = "\(codec == "ac3" ? "AC3" : "E-AC3"), \(rate) kbps"
+            if (channels ?? 0) > 6 {
+                a += ["-ac:{o}", "6"]
+                summary += ", downmixed to 5.1"
+            }
+            return (a, summary)
         }
         func canCopy(_ a: MediaTrack) -> Bool { !s.container.isMP4 || Self.mp4AudioCodecs.contains(a.codec) }
 
@@ -209,6 +248,8 @@ public struct ConvertBuilder {
 
         // Subtitles
         var subtitleArgs: [String] = []
+        var subtitleRows: [PlanSection.Row] = []
+        if let burn { subtitleRows.append(.init("Track \(burn.id)", "\(Self.summary(of: burn)) → Burned into the video")) }
         for t in subtitles {
             let codec: String
             if s.container.isMP4 {
@@ -216,6 +257,7 @@ public struct ConvertBuilder {
                 else if t.codec == "dvd_subtitle" { codec = "copy" }
                 else {
                     warnings.append("Skipped subtitle track \(t.streamIndex): \(t.codecLabel) subtitles can't be stored in MP4. Burn them in or choose MKV.")
+                    subtitleRows.append(.init("Track \(t.id)", "\(Self.summary(of: t)) → Skipped, can't be stored in MP4"))
                     continue
                 }
             } else {
@@ -227,6 +269,8 @@ public struct ConvertBuilder {
             if t.isDefault { disposition.append("default") }
             if t.isForced { disposition.append("forced") }
             subtitleArgs += ["-disposition:\(out)", disposition.isEmpty ? "0" : disposition.joined(separator: "+")]
+            let result = [codec == "copy" ? "Copy" : codec == "mov_text" ? "Text (mov_text)" : "SRT"] + disposition
+            subtitleRows.append(.init("Track \(t.id)", "\(Self.summary(of: t)) → \(result.joined(separator: " · "))"))
             out += 1
         }
 
@@ -236,16 +280,26 @@ public struct ConvertBuilder {
             subtitleArgs += ["-map", art.id, "-c:\(out)", "copy", "-disposition:\(out)", "attached_pic"]
             out += 1
         }
+        if !audioRows.isEmpty { details.append(PlanSection("Audio", audioRows)) }
+        if !subtitleRows.isEmpty { details.append(PlanSection("Subtitles", subtitleRows)) }
 
         // Container
         var tail: [String] = []
+        var container = [PlanSection.Row("Format", s.container.label), PlanSection.Row("Target device", s.device.label)]
         if !request.main.tracks(.attachment).isEmpty && !s.container.isMP4 {
             tail += ["-map", "0:t?", "-c:t", "copy"]
+            container.append(.init("Attachments", "Copied"))
         }
         tail += ["-map_metadata", "0", "-map_chapters", s.copyChapters ? "0" : "-1", "-max_muxing_queue_size", "4096"]
+        container.append(.init("Chapters", s.copyChapters ? (request.main.chapters.isEmpty ? "None in source" : "Copied (\(request.main.chapters.count))") : "Removed"))
         if s.container.isMP4 {
-            if let v = videos.first, let hd = hdVideoFlag(for: v, settings: s) { tail += ["-metadata", "hd_video=\(hd)"] }
+            if request.main.tracks.contains(where: \.isAttachedPicture), subtitleArgs.contains("attached_pic") { container.append(.init("Cover art", "Copied from source")) }
+            if let v = videos.first, let hd = hdVideoFlag(for: v, settings: s) {
+                tail += ["-metadata", "hd_video=\(hd)"]
+                container.append(.init("HD flag", ["720p", "1080p", "4K"][hd - 1]))
+            }
             if s.webOptimized { tail += ["-movflags", "+faststart"] }
+            container.append(.init("Web optimized", s.webOptimized ? "Yes (moov atom first)" : "No"))
             tail += ["-f", "mp4"]
         } else {
             if let title = request.metadata?.title, !title.isEmpty { tail += ["-metadata", "title=\(title)"] }
@@ -268,15 +322,68 @@ public struct ConvertBuilder {
                              progress: .ffmpeg(totalSeconds: total)))
 
         if s.container.isMP4, let metadata = request.metadata, !metadata.isEmpty {
+            container.append(.init("Metadata", "Written with AtomicParsley" + (metadata.title.isEmpty ? "" : ": “\(metadata.title)”")))
             let ap = try tools.require(.atomicParsley)
             steps.append(JobStep(label: "Writing metadata", tool: .atomicParsley, executable: ap,
                                  arguments: [request.outputURL.path] + metadata.atomicParsleyArguments() + ["--overWrite"],
                                  progress: .indeterminate))
         }
 
+        details.append(PlanSection("Container", container))
+
         return JobPlan(title: "Convert \(name)", steps: steps, outputs: [request.outputURL],
                        outputFolder: request.outputURL.deletingLastPathComponent(),
-                       temporaryFiles: temporaryFiles, warnings: warnings)
+                       temporaryFiles: temporaryFiles, warnings: warnings, details: details)
+    }
+
+    /// "HEVC · 3840×2160 · 23.976 fps · 10-bit · eng", for the job details.
+    static func summary(of t: MediaTrack) -> String {
+        var parts = [t.codecLabel]
+        if !t.details.isEmpty, t.kind != .subtitle { parts.append(t.details) }
+        if t.language != "und" { parts.append(t.language) }
+        if t.isForced { parts.append("forced") }
+        return parts.joined(separator: " · ")
+    }
+
+    /// Describes the encoder settings that videoCodecArgs passes to ffmpeg.
+    func videoEncodeRows(_ o: Int, _ v: MediaTrack, _ s: ConvertSettings) -> [PlanSection.Row] {
+        var rows = [PlanSection.Row("Codec", s.videoCodec.label), PlanSection.Row("Encoder", s.videoCodec.encoderName ?? "")]
+        switch s.videoCodec {
+        case .passthrough: break
+        case .x264, .x265: rows.append(.init("Quality", "Constant quality, CRF \(s.crf), preset \(s.encoderPreset)"))
+        case .x264TwoPass: rows.append(.init("Quality", "\(s.videoBitrateKbps) kbps average, 2 passes, preset \(s.encoderPreset)"))
+        case .handBrakeAppleTV4K:
+            rows.append(.init("Quality", "Constant quality, CRF 24, preset slow"))
+            rows.append(.init("x265 options", Self.handBrakeX265Params))
+        case .h264Hardware, .hevcHardware: rows.append(.init("Quality", "VideoToolbox quality \(s.hardwareQuality) of 100"))
+        }
+        let args = videoCodecArgs(o, v, s, pass: 0, passLog: "")
+        func value(_ option: String) -> String? { args.firstIndex(of: "\(option):\(o)").map { args[$0 + 1] } }
+        if let profile = value("-profile") { rows.append(.init("Profile", [profile, value("-level").map { "level \($0)" }].compactMap { $0 }.joined(separator: ", "))) }
+        return rows
+    }
+
+    /// The approximate output frame size after the scale filters, e.g. "3840×2160 → 1920×1080".
+    func outputSize(of v: MediaTrack, settings s: ConvertSettings) -> String? {
+        guard let w0 = v.width, let h0 = v.height, w0 > 0, h0 > 0 else { return nil }
+        var w = Double(w0), h = Double(h0)
+        if s.squarePixels, v.isAnamorphic, let sar = v.sampleAspectRatio.flatMap(Self.ratio), sar > 0 {
+            if sar > 1 { h /= sar } else { w *= sar }
+        }
+        if let maxW = s.effectiveMaxWidth.map(Double.init) {
+            let maxH = s.videoCodec.maxHeight.map(Double.init) ?? .infinity
+            let factor = min(1, maxW / w, maxH / h)
+            w *= factor
+            h *= factor
+        }
+        func even(_ x: Double) -> Int { Int((x / 2).rounded()) * 2 }
+        let result = "\(even(w))×\(even(h))"
+        return result == "\(w0)×\(h0)" ? "\(result) (unchanged)" : "\(w0)×\(h0) → \(result)"
+    }
+
+    static func ratio(_ text: String) -> Double? {
+        let parts = text.split(separator: ":").compactMap { Double($0) }
+        return parts.count == 2 && parts[1] != 0 ? parts[0] / parts[1] : nil
     }
 
     func videoCodecArgs(_ o: Int, _ v: MediaTrack, _ s: ConvertSettings, pass: Int, passLog: String) -> [String] {
