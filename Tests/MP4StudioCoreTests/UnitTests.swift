@@ -134,11 +134,11 @@ struct UnitTests {
             main: file, selectedTrackIDs: Set(file.tracks.map(\.id)), settings: ConvertSettings(),
             outputURL: URL(fileURLWithPath: "/tmp/o.m4v"), temporaryDirectory: URL(fileURLWithPath: "/tmp")))
         let args = plan.steps[0].arguments.joined(separator: " ")
-        // Each surround track gets an AAC stereo version first: outputs 1-2 TrueHD, 3-4 AC3, 5-6 DTS.
-        #expect(args.contains("-c:2 eac3 -b:2 640k -ac:2 6"))
-        #expect(args.contains("-c:4 copy"))
-        #expect(args.contains("-c:6 eac3 -b:6 640k"))
-        #expect(args.contains("-c:1 aac_at -b:1 192k -ac:1 2"))
+        // No AAC stereo versions by default: outputs 1 TrueHD, 2 AC3, 3 DTS.
+        #expect(args.contains("-c:1 eac3 -b:1 640k -ac:1 6"))
+        #expect(args.contains("-c:2 copy"))
+        #expect(args.contains("-c:3 eac3 -b:3 640k"))
+        #expect(!args.contains("aac_at"))
         #expect(Preset.builtIn[0].settings == ConvertSettings())
     }
 
