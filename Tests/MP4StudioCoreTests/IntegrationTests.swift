@@ -82,6 +82,7 @@ struct IntegrationTests {
         let extra = try await probe(try makeSidecar("Sample.fr.forced.srt", "1\n00:00:02,000 --> 00:00:04,000\nForcé\n"), input: 1)
         var settings = ConvertSettings()
         settings.container = .m4v
+        settings.addStereoVersion = true
         var meta = MetadataFields()
         meta.title = "Sample Movie"
         meta.year = "2019"
@@ -174,7 +175,7 @@ struct IntegrationTests {
         #expect(abs((r.tracks[0].frameRate ?? 0) - 60) < 0.5)
     }
 
-    /// The default (Apple TV) settings turn TrueHD into E-AC3 plus an AAC stereo version, keeping the video as is.
+    /// The default (Apple TV) settings turn TrueHD into E-AC3, keeping the video as is.
     /// (ffmpeg only encodes TrueHD up to 5.1; the 7.1 downmix is covered by the unit tests.)
     @Test func defaultsConvertTrueHDToEAC3() async throws {
         guard available else { return }
@@ -189,9 +190,8 @@ struct IntegrationTests {
             main: main, selectedTrackIDs: Set(main.tracks.map(\.id)), settings: ConvertSettings(), outputURL: out, temporaryDirectory: work))
         try await run(plan)
         let r = try await probe(out)
-        #expect(r.tracks.map(\.codec) == ["h264", "aac", "eac3"])
-        #expect(r.tracks[1].channels == 2 && r.tracks[2].channels == 6)
-        #expect(r.tracks[1].isDefault && !r.tracks[2].isDefault)
+        #expect(r.tracks.map(\.codec) == ["h264", "eac3"])
+        #expect(r.tracks[1].channels == 6 && r.tracks[1].isDefault)
     }
 
     @Test func editMP4WithMP4Box() async throws {

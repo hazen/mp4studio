@@ -134,7 +134,7 @@ public struct ConvertSettings: Codable, Equatable, Sendable {
 
     public var stereoAction: StereoAction = .passthrough
     public var surroundAction: SurroundAction = .eac3
-    public var addStereoVersion: Bool = true
+    public var addStereoVersion: Bool = false
     public var stereoBitrateKbps: Int = 192
     public var surroundBitrateKbps: Int = 640
 
