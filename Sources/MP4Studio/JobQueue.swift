@@ -137,6 +137,7 @@ final class JobQueue {
         job.startedAt = Date()
         var log = "\(job.plan.title)\nStarted \(Date())\n"
         for warning in job.plan.warnings { log += "Warning: \(warning)\n" }
+        if !job.plan.details.isEmpty { log += "\n\(job.plan.detailsText)\n" }
         try? log.write(to: job.logURL, atomically: true, encoding: .utf8)
 
         var failure: Error?

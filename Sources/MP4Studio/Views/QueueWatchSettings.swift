@@ -4,6 +4,7 @@ import SwiftUI
 
 struct QueueView: View {
     @Environment(AppState.self) private var app
+    @State private var detailsJob: Job?
 
     var body: some View {
         let queue = app.queue
@@ -13,9 +14,10 @@ struct QueueView: View {
                                        description: Text("Jobs you add from Convert, Edit Tracks, Extract, Split & Join or Watch Folder appear here and run one at a time."))
             } else {
                 List {
-                    ForEach(queue.jobs) { job in JobRow(job: job) }
+                    ForEach(queue.jobs) { job in JobRow(job: job) { detailsJob = job } }
                 }
                 .listStyle(.inset(alternatesRowBackgrounds: true))
+                .sheet(item: $detailsJob) { JobDetailsSheet(job: $0) }
             }
             Divider()
             HStack {
@@ -33,6 +35,7 @@ struct QueueView: View {
 private struct JobRow: View {
     @Environment(AppState.self) private var app
     let job: Job
+    let showDetails: () -> Void
 
     var body: some View {
         HStack(alignment: .center, spacing: 12) {
@@ -60,7 +63,10 @@ private struct JobRow: View {
             controls
         }
         .padding(.vertical, 4)
+        .contentShape(Rectangle())
+        .onTapGesture(count: 2, perform: showDetails)
         .contextMenu {
+            Button("Show Details") { showDetails() }
             Button("Show Log") { NSWorkspace.shared.open(job.logURL) }
             Button("Copy Commands") {
                 NSPasteboard.general.clearContents()
@@ -108,6 +114,7 @@ private struct JobRow: View {
     @ViewBuilder var controls: some View {
         let queue = app.queue
         HStack(spacing: 6) {
+            Button(action: showDetails) { Image(systemName: "info.circle") }.help("Show encoding details")
             switch job.status {
             case .running:
                 Button { queue.pause(job) } label: { Image(systemName: "pause.fill") }.help("Pause")
@@ -133,6 +140,199 @@ private struct JobRow: View {
     var existingOutputs: [URL] {
         let found = job.plan.outputs.filter { FileManager.default.fileExists(atPath: $0.path) }
         return found.isEmpty ? [job.plan.outputFolder] : found
+    }
+}
+
+/// Everything about how a job encodes (or encoded) its files: the plan, each command, and the finished output.
+private struct JobDetailsSheet: View {
+    @Environment(\.dismiss) private var dismiss
+    let job: Job
+    @State private var tab = "plan"
+
+    var body: some View {
+        VStack(spacing: 0) {
+            HStack {
+                Text(job.plan.title).font(.headline).lineLimit(1).truncationMode(.middle)
+                Spacer()
+                if let output {
+                    Picker("", selection: $tab) {
+                        Text("Settings").tag("plan")
+                        Text("Output File").tag("output")
+                    }
+                    .pickerStyle(.segmented).labelsHidden().fixedSize()
+                    .help("Output File shows MediaInfo's report on \(output.lastPathComponent)")
+                }
+            }
+            .padding(12)
+            Divider()
+            if tab == "output", let output {
+                MediaInfoPanel(url: output)
+            } else {
+                plan
+            }
+            Divider()
+            HStack {
+                Button("Show Log") { NSWorkspace.shared.open(job.logURL) }
+                    .disabled(!FileManager.default.fileExists(atPath: job.logURL.path))
+                Button("Copy Details") {
+                    NSPasteboard.general.clearContents()
+                    NSPasteboard.general.setString(fullText, forType: .string)
+                }
+                Spacer()
+                Button("Done") { dismiss() }.keyboardShortcut(.defaultAction)
+            }
+            .padding(12)
+        }
+        .frame(minWidth: 640, idealWidth: 720, minHeight: 480, idealHeight: 620)
+    }
+
+    /// The first output that exists once the job has finished.
+    var output: URL? {
+        guard job.status == .done else { return nil }
+        return job.plan.outputs.first { FileManager.default.fileExists(atPath: $0.path) }
+    }
+
+    var plan: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 16) {
+                DetailsSection(title: "Job", symbol: "list.bullet.rectangle", rows: jobRows)
+                ForEach(Array(job.plan.details.enumerated()), id: \.offset) { _, section in
+                    DetailsSection(title: section.title, symbol: symbol(for: section.title),
+                                   rows: section.rows.map { ($0.label, $0.value) })
+                }
+                if !job.plan.warnings.isEmpty {
+                    DetailsSection(title: "Warnings", symbol: "exclamationmark.triangle",
+                                   rows: job.plan.warnings.map { ("", $0) })
+                }
+                VStack(alignment: .leading, spacing: 8) {
+                    Label("Commands", systemImage: "terminal").font(.subheadline.weight(.semibold))
+                    ForEach(Array(job.plan.steps.enumerated()), id: \.offset) { i, step in
+                        CommandView(index: i, step: step, state: stepState(i))
+                    }
+                }
+            }
+            .padding(12)
+        }
+    }
+
+    var jobRows: [(String, String)] {
+        var rows = [("Status", statusText)]
+        if let startedAt = job.startedAt { rows.append(("Started", startedAt.formatted(date: .abbreviated, time: .standard))) }
+        if let finishedAt = job.finishedAt { rows.append(("Finished", finishedAt.formatted(date: .abbreviated, time: .standard))) }
+        if let startedAt = job.startedAt {
+            rows.append(("Elapsed", JobRow.duration((job.finishedAt ?? Date()).timeIntervalSince(startedAt))))
+        }
+        let outputs = job.plan.outputs.map(\.path)
+        rows.append((outputs.count > 1 ? "Outputs" : "Output", outputs.isEmpty ? job.plan.outputFolder.path : outputs.joined(separator: "\n")))
+        rows.append(("Log", job.logURL.path))
+        return rows
+    }
+
+    var statusText: String {
+        switch job.status {
+        case .queued: return "Waiting"
+        case .running, .paused:
+            let state = job.status == .paused ? "Paused" : "Running"
+            return "\(state) · step \(job.stepIndex + 1) of \(job.plan.steps.count) · \(Int(job.progress * 100))%"
+        case .done: return "Done"
+        case .cancelled: return "Cancelled"
+        case .failed(let message): return "Failed: \(message)"
+        }
+    }
+
+    func stepState(_ i: Int) -> CommandView.State {
+        switch job.status {
+        case .done: return .done
+        case .queued: return .waiting
+        case .running, .paused: return i < job.stepIndex ? .done : i == job.stepIndex ? .running : .waiting
+        case .failed, .cancelled: return i < job.stepIndex ? .done : i == job.stepIndex ? .stopped : .waiting
+        }
+    }
+
+    func symbol(for title: String) -> String {
+        switch title {
+        case "Source": return "doc"
+        case let t where t.hasPrefix("Video"): return "film"
+        case "Audio": return "speaker.wave.2"
+        case "Subtitles": return "captions.bubble"
+        case "Container": return "shippingbox"
+        default: return "square.stack"
+        }
+    }
+
+    var fullText: String {
+        var parts = [job.plan.title, jobRows.map { "  \($0): \($1)" }.joined(separator: "\n")]
+        if !job.plan.details.isEmpty { parts.append(job.plan.detailsText) }
+        if !job.plan.warnings.isEmpty { parts.append((["Warnings"] + job.plan.warnings.map { "  \($0)" }).joined(separator: "\n")) }
+        parts.append((["Commands"] + job.plan.steps.map { "  \($0.label): \($0.commandLine)" }).joined(separator: "\n"))
+        return parts.joined(separator: "\n\n")
+    }
+}
+
+private struct DetailsSection: View {
+    let title: String
+    let symbol: String
+    let rows: [(String, String)]
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Label(title, systemImage: symbol).font(.subheadline.weight(.semibold))
+            Grid(alignment: .leadingFirstTextBaseline, horizontalSpacing: 10, verticalSpacing: 4) {
+                ForEach(Array(rows.enumerated()), id: \.offset) { _, row in
+                    GridRow {
+                        Text(row.0).foregroundStyle(.secondary).gridColumnAlignment(.trailing)
+                        Text(row.1).textSelection(.enabled).fixedSize(horizontal: false, vertical: true)
+                    }
+                }
+            }
+            .font(.callout)
+        }
+        .padding(10)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(.quaternary.opacity(0.5), in: RoundedRectangle(cornerRadius: 8))
+    }
+}
+
+/// One step's full command line, with a copy button.
+private struct CommandView: View {
+    enum State { case waiting, running, done, stopped }
+    let index: Int
+    let step: JobStep
+    let state: State
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            HStack {
+                icon
+                Text("\(index + 1). \(step.label)").font(.callout.weight(.medium))
+                Text(step.tool.rawValue).font(.caption).foregroundStyle(.secondary)
+                Spacer()
+                Button {
+                    NSPasteboard.general.clearContents()
+                    NSPasteboard.general.setString(step.commandLine, forType: .string)
+                } label: { Image(systemName: "doc.on.doc") }
+                    .buttonStyle(.borderless)
+                    .help("Copy this command")
+            }
+            Text(step.commandLine)
+                .font(.caption.monospaced())
+                .textSelection(.enabled)
+                .fixedSize(horizontal: false, vertical: true)
+                .padding(8)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background(.background, in: RoundedRectangle(cornerRadius: 6))
+        }
+        .padding(10)
+        .background(.quaternary.opacity(0.5), in: RoundedRectangle(cornerRadius: 8))
+    }
+
+    @ViewBuilder var icon: some View {
+        switch state {
+        case .waiting: Image(systemName: "circle").foregroundStyle(.secondary)
+        case .running: Image(systemName: "gearshape.2.fill").foregroundStyle(.blue)
+        case .done: Image(systemName: "checkmark.circle.fill").foregroundStyle(.green)
+        case .stopped: Image(systemName: "xmark.circle.fill").foregroundStyle(.red)
+        }
     }
 }
 
