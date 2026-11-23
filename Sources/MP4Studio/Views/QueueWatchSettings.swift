@@ -11,10 +11,14 @@ struct QueueView: View {
         VStack(spacing: 0) {
             if queue.jobs.isEmpty {
                 ContentUnavailableView("No jobs", systemImage: "list.bullet.rectangle",
-                                       description: Text("Jobs you add from Convert, Edit Tracks, Extract, Split & Join or Watch Folder appear here and run one at a time."))
+                                       description: Text("Jobs you add from Convert, Edit Tracks, Extract, Split & Join or Watch Folder appear here and run one at a time. Drag waiting jobs to change the order."))
             } else {
                 List {
-                    ForEach(queue.jobs) { job in JobRow(job: job) { detailsJob = job } }
+                    ForEach(queue.jobs) { job in
+                        JobRow(job: job) { detailsJob = job }
+                            .moveDisabled(job.status != .queued)
+                    }
+                    .onMove { queue.move(fromOffsets: $0, toOffset: $1) }
                 }
                 .listStyle(.inset(alternatesRowBackgrounds: true))
                 .sheet(item: $detailsJob) { JobDetailsSheet(job: $0) }
@@ -68,6 +72,15 @@ private struct JobRow: View {
         .contextMenu {
             Button("Show Details") { showDetails() }
             Button("Show Log") { NSWorkspace.shared.open(job.logURL) }
+            if job.status == .queued {
+                let queue = app.queue
+                Divider()
+                Button("Run Next") { queue.move(job, .top) }.disabled(!queue.canMove(job, .top))
+                Button("Move Up") { queue.move(job, .up) }.disabled(!queue.canMove(job, .up))
+                Button("Move Down") { queue.move(job, .down) }.disabled(!queue.canMove(job, .down))
+                Button("Move to End") { queue.move(job, .bottom) }.disabled(!queue.canMove(job, .bottom))
+                Divider()
+            }
             Button("Copy Commands") {
                 NSPasteboard.general.clearContents()
                 NSPasteboard.general.setString(job.plan.steps.map(\.commandLine).joined(separator: "\n"), forType: .string)
