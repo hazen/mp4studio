@@ -112,6 +112,45 @@ final class JobQueue {
         jobs.removeAll { $0 === job }
     }
 
+    /// Drag-and-drop reordering. Only waiting jobs move; the next one to run is the first waiting job in the list.
+    func move(fromOffsets source: IndexSet, toOffset destination: Int) {
+        let movable = IndexSet(source.filter { jobs[$0].status == .queued })
+        guard !movable.isEmpty else { return }
+        jobs.move(fromOffsets: movable, toOffset: destination)
+    }
+
+    enum MoveDirection { case top, up, down, bottom }
+
+    /// Waiting jobs in the order they will run.
+    private var queuedIndices: [Int] { jobs.indices.filter { jobs[$0].status == .queued } }
+
+    func canMove(_ job: Job, _ direction: MoveDirection) -> Bool {
+        let order = queuedIndices
+        guard let i = jobs.firstIndex(where: { $0 === job }), let pos = order.firstIndex(of: i) else { return false }
+        switch direction {
+        case .top, .up: return pos > 0
+        case .down, .bottom: return pos < order.count - 1
+        }
+    }
+
+    /// Moves a waiting job within the run order, leaving other jobs where they are.
+    func move(_ job: Job, _ direction: MoveDirection) {
+        guard canMove(job, direction) else { return }
+        let order = queuedIndices
+        let i = jobs.firstIndex { $0 === job }!
+        let pos = order.firstIndex(of: i)!
+        switch direction {
+        case .up: jobs.swapAt(i, order[pos - 1])
+        case .down: jobs.swapAt(i, order[pos + 1])
+        case .top:
+            jobs.remove(at: i)
+            jobs.insert(job, at: order[0])
+        case .bottom:
+            jobs.remove(at: i)
+            jobs.insert(job, at: order[order.count - 1])
+        }
+    }
+
     func clearFinished() {
         jobs.removeAll { $0.status.isFinished }
     }
