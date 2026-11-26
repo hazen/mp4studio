@@ -130,6 +130,7 @@ final class ConvertModel {
         guard !videos.isEmpty else { return }
         isLoading = true
         Task {
+            var selectedNew = false
             for url in videos where !items.contains(where: { $0.file.url == url }) {
                 do {
                     let file = try await app.probe(url)
@@ -139,7 +140,8 @@ final class ConvertModel {
                     }
                     let item = ConvertItem(file: file, preset: app.defaultPreset)
                     items.append(item)
-                    if selection == nil { selection = item.id }
+                    // Select the first new file from each batch that's added.
+                    if !selectedNew { selection = item.id; selectedNew = true }
                     if file.container == .mp4, app.toolPaths.url(for: .atomicParsley) != nil,
                        let read = try? await MetadataBuilder(tools: app.toolPaths).read(url) {
                         item.setLoadedMetadata(read.fields)

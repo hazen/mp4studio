@@ -58,6 +58,9 @@ final class Job: Identifiable {
 final class JobQueue {
     var jobs: [Job] = []
     private(set) var current: Job?
+    /// Jobs only run after Start Queue. The queue stops again once nothing is left waiting,
+    /// so jobs added later wait for the next Start.
+    private(set) var isStarted = false
     private var runner: StepRunner?
     private var activity: NSObjectProtocol?
     let logsDirectory: URL
@@ -83,6 +86,18 @@ final class JobQueue {
         updateBadge()
         startNextIfIdle()
         return job
+    }
+
+    var waitingCount: Int { jobs.filter { $0.status == .queued }.count }
+
+    func start() {
+        isStarted = true
+        startNextIfIdle()
+    }
+
+    /// Lets the current job finish but doesn't start another.
+    func stop() {
+        isStarted = false
     }
 
     func pause(_ job: Job) {
@@ -162,8 +177,10 @@ final class JobQueue {
     }
 
     private func startNextIfIdle() {
-        guard current == nil, let next = jobs.first(where: { $0.status == .queued }) else {
-            if current == nil { endActivity() }
+        guard current == nil else { return }
+        guard isStarted, let next = jobs.first(where: { $0.status == .queued }) else {
+            if waitingCount == 0 { isStarted = false }
+            endActivity()
             return
         }
         current = next
