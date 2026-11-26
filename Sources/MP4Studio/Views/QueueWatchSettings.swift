@@ -5,15 +5,18 @@ import SwiftUI
 struct QueueView: View {
     @Environment(AppState.self) private var app
     @State private var detailsJob: Job?
+    @State private var selection = Set<Job.ID>()
 
     var body: some View {
         let queue = app.queue
         VStack(spacing: 0) {
             if queue.jobs.isEmpty {
                 ContentUnavailableView("No jobs", systemImage: "list.bullet.rectangle",
-                                       description: Text("Jobs you add from Convert, Edit Tracks, Extract, Split & Join or Watch Folder appear here and run one at a time. Drag waiting jobs to change the order."))
+                                       description: Text("Jobs you add from Convert, Edit Tracks, Extract, Split & Join or Watch Folder appear here and wait until you click Start Queue. They run one at a time; drag waiting jobs to change the order."))
             } else {
-                List {
+                // Double-click and the context menu go through the List, not gestures on each row:
+                // a tap gesture on a row swallows the mouse-down that starts a drag to reorder.
+                List(selection: $selection) {
                     ForEach(queue.jobs) { job in
                         JobRow(job: job) { detailsJob = job }
                             .moveDisabled(job.status != .queued)
@@ -21,17 +24,72 @@ struct QueueView: View {
                     .onMove { queue.move(fromOffsets: $0, toOffset: $1) }
                 }
                 .listStyle(.inset(alternatesRowBackgrounds: true))
+                .contextMenu(forSelectionType: Job.ID.self) { ids in
+                    if ids.count == 1, let job = job(ids.first) {
+                        JobMenu(job: job) { detailsJob = job }
+                    }
+                } primaryAction: { ids in
+                    if ids.count == 1, let job = job(ids.first) { detailsJob = job }
+                }
                 .sheet(item: $detailsJob) { JobDetailsSheet(job: $0) }
             }
             Divider()
             HStack {
-                Text("\(queue.pendingCount) waiting or running").foregroundStyle(.secondary)
+                Text(statusText).foregroundStyle(.secondary)
                 Spacer()
                 Button("Open Logs Folder") { NSWorkspace.shared.open(app.logsDirectory) }
                 Button("Clear Finished") { queue.clearFinished() }
                     .disabled(!queue.jobs.contains { $0.status.isFinished })
+                if queue.isStarted {
+                    Button("Stop Queue") { queue.stop() }
+                        .help("Finish the current job, then don't start any more")
+                } else {
+                    Button("Start Queue") { queue.start() }
+                        .buttonStyle(.borderedProminent)
+                        .disabled(queue.waitingCount == 0)
+                        .help("Run the waiting jobs one at a time, in list order")
+                }
             }
             .padding(10)
+        }
+    }
+
+    private var statusText: String {
+        let queue = app.queue
+        let waiting = queue.waitingCount
+        let running = queue.current != nil
+        if waiting == 0 && !running { return "Nothing waiting" }
+        var text = running ? "1 running, \(waiting) waiting" : "\(waiting) waiting"
+        if !queue.isStarted && waiting > 0 { text += " · click Start Queue to run" }
+        return text
+    }
+
+    private func job(_ id: Job.ID?) -> Job? {
+        app.queue.jobs.first { $0.id == id }
+    }
+}
+
+/// The right-click menu for a job in the queue.
+private struct JobMenu: View {
+    @Environment(AppState.self) private var app
+    let job: Job
+    let showDetails: () -> Void
+
+    var body: some View {
+        let queue = app.queue
+        Button("Show Details", action: showDetails)
+        Button("Show Log") { NSWorkspace.shared.open(job.logURL) }
+        if job.status == .queued {
+            Divider()
+            Button("Run Next") { queue.move(job, .top) }.disabled(!queue.canMove(job, .top))
+            Button("Move Up") { queue.move(job, .up) }.disabled(!queue.canMove(job, .up))
+            Button("Move Down") { queue.move(job, .down) }.disabled(!queue.canMove(job, .down))
+            Button("Move to End") { queue.move(job, .bottom) }.disabled(!queue.canMove(job, .bottom))
+            Divider()
+        }
+        Button("Copy Commands") {
+            NSPasteboard.general.clearContents()
+            NSPasteboard.general.setString(job.plan.steps.map(\.commandLine).joined(separator: "\n"), forType: .string)
         }
     }
 }
@@ -68,24 +126,6 @@ private struct JobRow: View {
         }
         .padding(.vertical, 4)
         .contentShape(Rectangle())
-        .onTapGesture(count: 2, perform: showDetails)
-        .contextMenu {
-            Button("Show Details") { showDetails() }
-            Button("Show Log") { NSWorkspace.shared.open(job.logURL) }
-            if job.status == .queued {
-                let queue = app.queue
-                Divider()
-                Button("Run Next") { queue.move(job, .top) }.disabled(!queue.canMove(job, .top))
-                Button("Move Up") { queue.move(job, .up) }.disabled(!queue.canMove(job, .up))
-                Button("Move Down") { queue.move(job, .down) }.disabled(!queue.canMove(job, .down))
-                Button("Move to End") { queue.move(job, .bottom) }.disabled(!queue.canMove(job, .bottom))
-                Divider()
-            }
-            Button("Copy Commands") {
-                NSPasteboard.general.clearContents()
-                NSPasteboard.general.setString(job.plan.steps.map(\.commandLine).joined(separator: "\n"), forType: .string)
-            }
-        }
     }
 
     var detailLine: String {

@@ -66,8 +66,8 @@ To use your own app icon, put it at `Resources/AppIcon.icns`. That path is gitig
 - **Extract Tracks**: mkvextract for MKV, ffmpeg stream copy for everything else.
 - **Split & Join**: split by size, by length, or extract a segment; join files in any order.
 - **Metadata**: edit tags on MP4/M4V files in place: TV show fields, descriptions, cast/directors/writers/producers, rating and artwork. "Copy Show Info to All" helps tag a season at once.
-- **Queue**: one job at a time, with progress, time remaining, pause/resume, stop and retry. Each job's log is in `~/Library/Logs/MP4Studio`, and you can copy a job's exact commands from its context menu. The Mac stays awake while jobs run.
-- **Watch Folder**: new files are converted with a preset once they finish copying.
+- **Queue**: jobs wait until you click **Start Queue**, then run one at a time in list order (drag waiting jobs or use their context menu to reorder). Each job shows progress, time remaining, pause/resume, stop and retry. Each job's log is in `~/Library/Logs/MP4Studio`, and you can copy a job's exact commands from its context menu. The Mac stays awake while jobs run.
+- **Watch Folder**: new files are queued with a preset once they finish copying.
 
 ## Tests
 
